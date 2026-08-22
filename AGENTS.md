@@ -20,9 +20,10 @@ covers working practices.
 ```
 xpad.h              the ABI: struct layout, button bitmask, declarations
 xpad.c              reference implementation, consumer and provider helpers
-test/abi.c          ABI assertions, mostly static, runs on the host
+test/abi.c          ABI assertions, mostly static; host and ST builds
 test/mint/osbind.h  host stand-in for <mint/osbind.h>
-Makefile            check (m68k compile) and test (host assertions)
+test/run-hatari.py  boots an ST program under Hatari, relays its output
+Makefile            test, check, st and hatari targets
 README.md           the specification
 LICENSE             BSD-2-Clause
 ```
@@ -35,6 +36,8 @@ improvise a throwaway one.
 ```
 make                               host ABI assertions, no toolchain
 STCMD_NO_TTY=1 stcmd make check    compile for the ST, warnings fatal
+STCMD_NO_TTY=1 stcmd make st       link the harness as build/ABI.TOS
+make hatari                        run that on an emulated ST
 ```
 
 `test` is the default goal and needs nothing but a host compiler, so run
@@ -43,10 +46,24 @@ from `atarist-toolkit-docker` and syntax checks `test/abi.c` there too,
 so the frozen layout is asserted for the target and not only for the
 host.
 
+`st` and `hatari` are two commands rather than one because the build
+needs the container and the emulator does not. `hatari` boots EmuTOS
+headless with `build` as drive C, autostarts the harness, and exits with
+its status. It needs Hatari and a TOS image; set `$HATARI` or `$TOS` if
+they are not found. Note that `make` reports a failing recipe as exit 2,
+so check the printed verdict rather than the code.
+
 Target Atari Mega STE, but everything must work correctly on ST and STE.
-Neither target executes anything on an ST, so test in Hatari before
-claiming anything works. There is no CI that can catch a 68000-specific
-mistake for you.
+`hatari` covers the emulated ST, so run it before claiming anything
+works; nothing here runs on real hardware, and there is no CI that can
+catch a 68000-specific mistake for you.
+
+`test/abi.c` builds for both and switches on `__MINT__`. The pure logic
+runs either way. The cookie jar cannot: the host substitutes a fake jar
+for `0x5A0`, which is the only way to reach a full or absent jar, while
+the ST uses the real one under real supervisor mode, which is the only
+way a published pointer survives the jar's `uint32_t`. Keep both. A
+change to the jar code that only passes one of them is not finished.
 
 ## Hard invariants
 

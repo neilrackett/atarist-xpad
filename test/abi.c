@@ -149,8 +149,11 @@ XPAD_ASSERT(XPAD_MAX_PADS == 4, "XPAD_MAX_PADS changed");
 
 static int failures;
 
-/* Backs XPAD_JAR for the host build; see test/mint/osbind.h. */
+#ifndef __MINT__
+/* Backs XPAD_JAR for the host build; see test/mint/osbind.h. On an ST
+ * xpad.c reads the real jar at 0x5A0 and this does not exist. */
 uint32_t *xpad_test_jar;
+#endif
 
 static void check(int ok, const char *what)
 {
@@ -444,13 +447,27 @@ static void check_req(void)
     check(xpad_req(&x) == &req, "xpad_req accepts a larger req from a newer provider");
 }
 
+/* ------------------------------------------------------------------ */
+/* Cookie jar                                                          */
+/* ------------------------------------------------------------------ */
+
 /*
- * Cookie jar handling, the one part of xpad.c that cannot run on an ST
- * without hardware and cannot run here without the XPAD_JAR hook. Only
- * the jar layout is asserted: xpad_publish() stores the block address
- * through a uint32_t, which truncates a host pointer, so nothing here
- * reads a published address back or calls xpad_find() on a live entry.
+ * The jar is tested two ways, because neither way covers the other.
  *
+ * On the host a fake jar is substituted for 0x5A0, which is the only
+ * way to reach a full jar, a jar that is absent, or exact capacity
+ * arithmetic. It cannot check a published address, because
+ * xpad_publish() stores one through a uint32_t and a host pointer does
+ * not survive that.
+ *
+ * On an ST the real jar is used, under real supervisor mode, where a
+ * pointer is 32 bits and does survive. That is the round trip a
+ * consumer actually performs, and only the emulator can run it.
+ */
+
+#ifndef __MINT__
+
+/*
  * A jar is pairs of (id, value) ending in a (0, slots_left) terminator.
  */
 
@@ -556,6 +573,63 @@ static void check_jar_unpublish(void)
     check(jar[1] == JAR_SLOTS, "install and remove cycles leak no slots");
 }
 
+#else /* __MINT__ */
+
+/*
+ * The round trip through TOS's own jar: publish, find it again, read a
+ * pad through the pointer that came back, then withdraw. This is what
+ * the host build cannot reach, so a failure here is a failure nothing
+ * else in this harness would catch.
+ */
+
+static XPAD live;
+
+static void check_jar_live(void)
+{
+    const XPAD *found;
+    XPAD_PAD *back;
+    XPAD_PAD out;
+
+    xpad_init(&live, 2, XPAD_CAP_ANALOG, "hatari harness 1.0", 0);
+    check(xpad_valid(&live), "the block to publish is valid");
+
+    if (!xpad_publish(&live))
+    {
+        /* Not a defect in xpad: the jar had no room for another entry. */
+        check(0, "xpad_publish installs the cookie (jar too small?)");
+        return;
+    }
+
+    check(1, "xpad_publish installs the cookie");
+
+    found = xpad_find();
+    check(found == &live, "xpad_find returns the block that was published");
+
+    if (found)
+    {
+        back = xpad_back(&live);
+        back[1].type = XPAD_TYPE_XBOX;
+        back[1].buttons = XPAD_SOUTH | XPAD_START;
+        back[1].lx = -42;
+        xpad_commit(&live);
+
+        check(xpad_read(found, 1, &out),
+              "xpad_read succeeds through the found block");
+        check(out.type == XPAD_TYPE_XBOX &&
+                  out.buttons == (XPAD_SOUTH | XPAD_START) &&
+                  out.lx == -42,
+              "a pad survives publish, find and read");
+        check(xpad_connected(found) == 1, "xpad_connected sees the pad");
+    }
+
+    check(xpad_publish(&live), "xpad_publish repoints an existing cookie");
+    check(xpad_unpublish(), "xpad_unpublish withdraws the cookie");
+    check(xpad_find() == 0, "xpad_find returns NULL once withdrawn");
+    check(xpad_unpublish() == 0, "xpad_unpublish fails when already gone");
+}
+
+#endif /* __MINT__ */
+
 int main(void)
 {
     printf("xpad ABI checks, version %d.%d\n\n",
@@ -570,10 +644,22 @@ int main(void)
     check_read_forward_compat();
     check_valid();
     check_req();
+#ifndef __MINT__
     check_jar_publish();
     check_jar_unpublish();
+#else
+    check_jar_live();
+#endif
 
     printf("\n%s\n", failures ? "FAILED" : "all checks passed");
+
+#ifdef __MINT__
+    /* Hatari has no way to hand an exit status back, and sits at the
+     * desktop once this returns. The runner watches for this line so it
+     * can stop the emulator as soon as there is a verdict. */
+    printf("XPAD-DONE %d\n", failures ? 1 : 0);
+#endif
+    fflush(stdout);
 
     return failures ? 1 : 0;
 }

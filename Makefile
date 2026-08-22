@@ -11,6 +11,14 @@
 #   STCMD_NO_TTY=1 stcmd make check    compile for the ST, warnings fatal
 #   STCMD_NO_TTY=1 stcmd make all      both
 #
+# The same assertions can also run on an emulated ST, which is the only
+# place the cookie jar meets supervisor mode and 32-bit pointers. That
+# takes two commands, because the build needs the container and the
+# emulator does not:
+#
+#   STCMD_NO_TTY=1 stcmd make st       link build/ABI.TOS
+#   make hatari                        run it under Hatari
+#
 
 # The warnings policy applies to both builds. Keep it in one place so
 # tightening the ST build cannot quietly leave the host build looser.
@@ -32,7 +40,7 @@ BUILD       = build
 # one a newcomer or a pre-commit hook can actually run.
 .DEFAULT_GOAL := test
 
-.PHONY: all check test clean
+.PHONY: all check test st hatari clean
 
 all: check test
 
@@ -50,6 +58,19 @@ check: | $(BUILD)
 test: | $(BUILD)
 	$(HOSTCC) $(HOSTCFLAGS) test/abi.c xpad.c -o $(BUILD)/abi
 	@$(BUILD)/abi
+
+# The ST build of the harness. No -Itest here: it must pick up the real
+# <mint/osbind.h> and the real cookie jar at 0x5A0, not the host stubs.
+$(BUILD)/ABI.TOS: test/abi.c xpad.c xpad.h | $(BUILD)
+	$(CC) $(CFLAGS) test/abi.c xpad.c -o $@
+
+st: $(BUILD)/ABI.TOS
+	@echo "built $(BUILD)/ABI.TOS, now run: make hatari"
+
+# Runs on the host, not in the container, since that is where Hatari is.
+hatari:
+	@test -f $(BUILD)/ABI.TOS || { 	    echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
+	@python3 test/run-hatari.py $(BUILD)/ABI.TOS
 
 $(BUILD):
 	@mkdir -p $(BUILD)
