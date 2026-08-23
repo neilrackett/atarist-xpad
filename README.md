@@ -295,7 +295,7 @@ comma and period to the shoulders, Tab to select and Esc to start.
   NULL and neither claims `XPAD_CAP_RUMBLE` or `XPAD_CAP_LED`.
 - **More than two pads**, though the ABI carries four. The keyboard
   driver publishes one, the joystick driver two.
-- **Coexist with another provider.** XPad is single provider, so both
+- **Coexist with another provider.** Xpad is single provider, so both
   refuse to install when an `XPAD` cookie is already present rather than
   displace something better.
 

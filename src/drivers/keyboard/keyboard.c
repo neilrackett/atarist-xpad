@@ -2,7 +2,7 @@
 /* SPDX-FileCopyrightText: 2026 Neil Rackett */
 
 /*
- * XPad keyboard driver: publishes the ST keyboard as a single pad,
+ * Xpad keyboard driver: publishes the ST keyboard as a single pad,
  * using DOOM's default controls.
  *
  * EXAMPLE DRIVER. Written to be read and copied as much as to be used.
@@ -295,7 +295,7 @@ static int install(void)
 
     if (xpad_find())
     {
-        printf("An XPad provider is already installed. Leaving it alone.\n");
+        printf("An Xpad provider is already installed. Leaving it alone.\n");
         return 0;
     }
 

@@ -4,7 +4,7 @@
 /*
  * Joystick driver translation tests.
  *
- * The IKBD to XPad mapping is the only part of that driver with logic
+ * The IKBD to Xpad mapping is the only part of that driver with logic
  * worth getting wrong, and it is deliberately free of TOS dependencies,
  * so it is tested here on the host rather than in the emulator. The
  * trampoline and the commit path are covered by the driver's own self

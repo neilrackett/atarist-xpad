@@ -2,7 +2,7 @@
 /* SPDX-FileCopyrightText: 2026 Neil Rackett */
 
 /*
- * ST keyboard scancodes to XPad buttons, using DOOM's default controls.
+ * ST keyboard scancodes to Xpad buttons, using DOOM's default controls.
  *
  * Free of TOS dependencies so the host build tests it without an
  * emulator, the same split the joystick driver uses.
@@ -67,7 +67,7 @@ static const XPAD_KEYMAP xpad_keymap[] = {
     (XPAD_DPAD | XPAD_SOUTH | XPAD_EAST | XPAD_WEST | XPAD_NORTH | \
      XPAD_TL | XPAD_TR | XPAD_SELECT | XPAD_START)
 
-/* The XPad button for a make code, or 0 when the key is not mapped. */
+/* The Xpad button for a make code, or 0 when the key is not mapped. */
 static uint32_t xpad_keymap_lookup(uint8_t scancode)
 {
     unsigned i;

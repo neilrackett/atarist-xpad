@@ -2,7 +2,7 @@
 /* SPDX-FileCopyrightText: 2026 Neil Rackett */
 
 /*
- * XPad joystick driver: publishes both joystick ports as two pads.
+ * Xpad joystick driver: publishes both joystick ports as two pads.
  *
  * EXAMPLE DRIVER. Written to be read and copied as much as to be used:
  * it is the smallest complete provider, showing the whole shape of one
@@ -246,11 +246,11 @@ static long install_vector(void)
 
 static int install(void)
 {
-    /* XPad is single provider and the last one to publish wins, so a
+    /* Xpad is single provider and the last one to publish wins, so a
      * shim like this must not displace something better. */
     if (xpad_find())
     {
-        printf("An XPad provider is already installed. Leaving it alone.\n");
+        printf("An Xpad provider is already installed. Leaving it alone.\n");
         return 0;
     }
 

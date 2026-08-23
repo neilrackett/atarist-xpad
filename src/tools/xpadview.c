@@ -2,7 +2,7 @@
 /* SPDX-FileCopyrightText: 2026 Neil Rackett */
 
 /*
- * XPad viewer: live input state for whichever provider is installed.
+ * Xpad viewer: live input state for whichever provider is installed.
  *
  *   XPADVIEW       view the installed provider
  *   XPADVIEW -d    publish a demo provider and view that
@@ -26,7 +26,7 @@
 
 #include "../xpad.h"
 
-#define DEMO_PROVIDER "XPad demo provider 1.0"
+#define DEMO_PROVIDER "Xpad demo provider 1.0"
 #define SAMPLE_FRAMES 50 /* one second at 50 Hz, for the seq rate */
 
 /* ------------------------------------------------------------------ */
@@ -227,7 +227,7 @@ static void explain_absence(void)
 
     if (!x)
     {
-        put("No XPad provider found.\r\n\r\n");
+        put("No Xpad provider found.\r\n\r\n");
         put("No XPAD cookie is installed. Load a driver,\r\n");
         put("or run XPADVIEW -d to see the viewer work.\r\n");
         return;
@@ -252,7 +252,7 @@ static void draw_header(const XPAD *x, int sel, unsigned rate)
     int i;
 
     at(0, 0);
-    printf("XPad viewer            v%d.%d  %3u/s ",
+    printf("Xpad viewer            v%d.%d  %3u/s ",
            x->version >> 8, x->version & 0xff, rate);
 
     at(1, 0);

@@ -2,7 +2,7 @@
 /* SPDX-FileCopyrightText: 2026 Neil Rackett */
 
 /*
- * IKBD joystick byte to XPad buttons.
+ * IKBD joystick byte to Xpad buttons.
  *
  * Deliberately free of TOS dependencies: this is the only part of the
  * driver with logic that can be wrong, so the host build tests it
