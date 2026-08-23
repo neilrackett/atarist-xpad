@@ -395,19 +395,34 @@ int main(int argc, char **argv)
     const XPAD *x;
     int demo_mode = 0;
     int once = 0;
+    int i;
 
 #ifdef XPAD_SELFTEST
-    /* Hatari's --auto passes no arguments, so the harness build cannot
-     * be asked for a mode: it reports on whatever provider is already
-     * installed, and only publishes the demo when there is none. That
-     * makes one binary cover both the standalone test and the
-     * integration test, where a driver is loaded from AUTO first. */
-    (void)argc;
-    (void)argv;
-    demo_mode = (xpad_find() == 0);
-    once = 1;
-#else
-    int i;
+    /*
+     * Hatari's --auto takes a path and no arguments, so the harness has
+     * no way to ask for a mode. This build supplies the command line it
+     * would have passed and then runs the ordinary parsing below, so
+     * the only thing the tested binary does differently from the
+     * shipped one is where argv came from. Replacing the parsing here
+     * instead, which is what this used to do, left the flags README
+     * documents with no test at all.
+     */
+    static char *demo_args[] = {"XPADVIEW", "-d", "-1"};
+    static char *live_args[] = {"XPADVIEW", "-1"};
+
+    /* Demo when nothing is installed, live when a driver was loaded
+     * from AUTO first, so one binary covers both harness targets. */
+    if (xpad_find())
+    {
+        argc = 2;
+        argv = live_args;
+    }
+    else
+    {
+        argc = 3;
+        argv = demo_args;
+    }
+#endif
 
     for (i = 1; i < argc; i++)
     {
@@ -416,7 +431,6 @@ int main(int argc, char **argv)
         else if (strcmp(argv[i], "-1") == 0)
             once = 1;
     }
-#endif
 
     if (demo_mode)
     {

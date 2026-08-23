@@ -257,8 +257,6 @@ static int selftest(void)
 /* Install                                                             */
 /* ------------------------------------------------------------------ */
 
-#ifndef XPAD_SELFTEST
-
 static _KBDVECS *vecs;
 
 /* kbdvec sits four bytes below the documented KBDVECS block. Vector
@@ -307,16 +305,25 @@ static int install(void)
     return 1;
 }
 
-#endif /* !XPAD_SELFTEST */
 
 int main(int argc, char **argv)
 {
 #ifdef XPAD_SELFTEST
-    (void)argc;
-    (void)argv;
+    /*
+     * Hatari's --auto takes a path and no arguments, so the harness has
+     * no way to ask for a mode. This build supplies the command line it
+     * would have passed and then runs the ordinary parsing below, so
+     * the only thing the tested binary does differently from the
+     * shipped one is where argv came from. Replacing the parsing here
+     * instead, which is what this used to do, left the flags README
+     * documents with no test at all.
+     */
+    static char *test_args[] = {"XPADKEY", "-t"};
 
-    return selftest();
-#else
+    argc = 2;
+    argv = test_args;
+#endif
+
     if (argc > 1 && strcmp(argv[1], "-t") == 0)
         return selftest();
 
@@ -326,5 +333,4 @@ int main(int argc, char **argv)
     Ptermres(_base->p_tlen + _base->p_dlen + _base->p_blen + 256, 0);
 
     return 0; /* not reached */
-#endif
 }

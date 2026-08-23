@@ -110,9 +110,16 @@ catch a 68000-specific mistake for you.
 
 Drivers follow the same split. Anything with logic worth getting wrong
 lives in a TOS-free header the host build tests (`translate.h`,
-`keymap.h`), and
-whatever needs an ST gets a self test in the driver itself, built as a
-separate binary because Hatari's `--auto` takes a path and no arguments.
+`keymap.h`), and whatever needs an ST gets a self test in the program
+itself.
+
+Those self tests are reached through a second binary built with
+`-DXPAD_SELFTEST`, because Hatari's `--auto` takes a path and no
+arguments. **That build supplies a command line and then runs the
+ordinary `main()`; it must never branch around the real logic.** It did
+once, and the result was that the viewer's flag parsing had no test at
+all and the integration test exercised a program nobody ships. The two
+binaries should differ only in where `argv` came from.
 
 `test/abi.c` builds for both and switches on `__MINT__`. The pure logic
 runs either way. The cookie jar cannot: the host substitutes a fake jar
