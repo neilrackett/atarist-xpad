@@ -35,13 +35,14 @@ HOSTCFLAGS  = $(WARNINGS) -O1 -std=c11 -Itest \
               -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast
 
 SRC         = src
+DRIVERS     = $(SRC)/drivers
 BUILD       = build
 
 # test runs anywhere; check needs the cross toolchain. Default to the
 # one a newcomer or a pre-commit hook can actually run.
 .DEFAULT_GOAL := test
 
-.PHONY: all check test st hatari clean
+.PHONY: all check test st hatari hatari-joystick drivers clean
 
 all: check test
 
@@ -56,22 +57,52 @@ check: | $(BUILD)
 
 # Host build of the ABI assertions. Most of the file is static
 # assertions, so a violation fails this compile rather than the run.
+# Driver translation logic runs here too: it is pure logic, kept free of
+# TOS dependencies precisely so it does not need the emulator.
 test: | $(BUILD)
 	$(HOSTCC) $(HOSTCFLAGS) test/abi.c $(SRC)/xpad.c -o $(BUILD)/abi
 	@$(BUILD)/abi
+	@echo
+	$(HOSTCC) $(HOSTCFLAGS) test/joystick.c -o $(BUILD)/joy
+	@$(BUILD)/joy
 
 # The ST build of the harness. No -Itest here: it must pick up the real
 # <mint/osbind.h> and the real cookie jar at 0x5A0, not the host stubs.
 $(BUILD)/ABI.TOS: test/abi.c $(SRC)/xpad.c $(SRC)/xpad.h | $(BUILD)
 	$(CC) $(CFLAGS) test/abi.c $(SRC)/xpad.c -o $@
 
-st: $(BUILD)/ABI.TOS
-	@echo "built $(BUILD)/ABI.TOS, now run: make hatari"
+# Drivers are whole programs, not part of the library, so each gets its
+# own directory: this one needs a joyvec trampoline the core never does.
+JOYDIR = $(DRIVERS)/joystick
+JOYSRC = $(JOYDIR)/joystick.c $(JOYDIR)/joyvec.s $(SRC)/xpad.c
+JOYDEP = $(JOYSRC) $(JOYDIR)/translate.h $(SRC)/xpad.h
+
+$(BUILD)/XPADJOY.PRG: $(JOYDEP) | $(BUILD)
+	$(CC) $(CFLAGS) $(JOYSRC) -o $@
+
+# The same source built to run its self test and exit. A separate binary
+# because Hatari's --auto takes a path and no arguments, so the resident
+# driver's -t flag is reachable by hand but not by the harness.
+$(BUILD)/JOYTEST.TOS: $(JOYDEP) | $(BUILD)
+	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(JOYSRC) -o $@
+
+drivers: $(BUILD)/XPADJOY.PRG
+	@echo "built $(BUILD)/XPADJOY.PRG"
+
+st: $(BUILD)/ABI.TOS $(BUILD)/XPADJOY.PRG $(BUILD)/JOYTEST.TOS
+	@echo "built everything that runs on an ST into $(BUILD)"
+	@echo "run: make hatari / make hatari-joystick"
 
 # Runs on the host, not in the container, since that is where Hatari is.
 hatari:
 	@test -f $(BUILD)/ABI.TOS || { 	    echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
 	@python3 test/run-hatari.py $(BUILD)/ABI.TOS
+
+# The joystick driver's self test on an emulated ST: it drives the real
+# trampoline with fabricated packets and installs nothing.
+hatari-joystick:
+	@test -f $(BUILD)/JOYTEST.TOS || { echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
+	@python3 test/run-hatari.py $(BUILD)/JOYTEST.TOS
 
 $(BUILD):
 	@mkdir -p $(BUILD)

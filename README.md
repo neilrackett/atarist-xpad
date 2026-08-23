@@ -220,9 +220,12 @@ this order:
 4. Plain joystick plus keyboard.
 
 A shim that publishes an `XPAD` block populated from steps 2 to 4 lets a
-port implement only step 1 and get the rest for nothing. That is the
-obvious next file to write, and it also makes the whole thing testable
-under Hatari before any hardware exists.
+port implement only step 1 and get the rest for nothing.
+
+`src/drivers/joystick` is the first of these: a resident driver that
+hooks `joyvec` and publishes joystick 1 as a single pad, four directions
+and one button. That is everything the IKBD reports for a port, so it is
+the floor the ladder above rests on, and it works on any ST ever made.
 
 ## Integrating into a port
 

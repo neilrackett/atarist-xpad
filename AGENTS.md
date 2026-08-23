@@ -20,7 +20,7 @@ covers working practices.
 ```
 src/xpad.h          the ABI: struct layout, button bitmask, declarations
 src/xpad.c          reference implementation, consumer and provider helpers
-src/drivers/        example providers, one per transport
+src/drivers/joystick  joyvec provider: joystick 1 as one pad
 src/tools/          standalone programs, eg the diagnostic viewer
 test/abi.c          ABI assertions, mostly static; host and ST builds
 test/mint/osbind.h  host stand-in for <mint/osbind.h>
@@ -40,10 +40,11 @@ There are two targets, and the harness is already written: do not
 improvise a throwaway one.
 
 ```
-make                               host ABI assertions, no toolchain
+make                               host tests, no toolchain
 STCMD_NO_TTY=1 stcmd make check    compile for the ST, warnings fatal
-STCMD_NO_TTY=1 stcmd make st       link the harness as build/ABI.TOS
-make hatari                        run that on an emulated ST
+STCMD_NO_TTY=1 stcmd make st       link everything that runs on an ST
+make hatari                        ABI assertions on an emulated ST
+make hatari-joystick               joystick driver self test
 ```
 
 `test` is the default goal and needs nothing but a host compiler, so run
@@ -63,6 +64,11 @@ Target Atari Mega STE, but everything must work correctly on ST and STE.
 `hatari` covers the emulated ST, so run it before claiming anything
 works; nothing here runs on real hardware, and there is no CI that can
 catch a 68000-specific mistake for you.
+
+Drivers follow the same split. Anything with logic worth getting wrong
+lives in a TOS-free header the host build tests (`translate.h`), and
+whatever needs an ST gets a self test in the driver itself, built as a
+separate binary because Hatari's `--auto` takes a path and no arguments.
 
 `test/abi.c` builds for both and switches on `__MINT__`. The pure logic
 runs either way. The cookie jar cannot: the host substitutes a fake jar
@@ -136,6 +142,16 @@ Listed so they do not get helpfully undone:
 - `xpad_req()` is the only supported route to the request area, which is
   the sole direction a consumer can corrupt a provider. Do not encourage
   reading `XPAD.req` directly.
+- The joystick driver hooks `joyvec` and needs no periodic hook at all,
+  because the IKBD calls it whenever the stick changes. Where a driver
+  does need one, prefer ETV (`$400`) over VBL (`$70`): VBL is far more
+  likely to be clobbered by an existing game.
+- A driver must always chain to the handler it displaced. One that
+  swallows packets breaks the desktop and every existing game, so the
+  joystick self test checks for it explicitly.
+- **System variables below `$800` need `Supexec`.** The ST bus errors on
+  user mode access down there, which is why the cookie jar at `$5a0` and
+  vector surgery both go through it.
 - `xpad_fold_stick()` uses a radial deadzone, three word multiplies,
   which is acceptable at VBL rate. Do not "optimise" it into a box test:
   a box test rejects diagonals whose magnitude clears the threshold, so
