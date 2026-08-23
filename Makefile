@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: 2026 Neil Rackett
 
 #
-# xpad is consumed by copying xpad.h and xpad.c into a port, so this
-# Makefile deliberately builds no library. It exists to prove the
+# xpad is consumed by copying src/xpad.h and src/xpad.c into a port, so
+# this Makefile deliberately builds no library. It exists to prove the
 # reference implementation still compiles for the ST, and to run the ABI
 # assertions on the host.
 #
@@ -28,12 +28,13 @@ CC          = m68k-atari-mint-gcc
 CFLAGS      = $(WARNINGS) -O2 -fomit-frame-pointer -m68000
 
 HOSTCC      = cc
-# -Itest supplies a stub <mint/osbind.h> so xpad.c builds unmodified.
+# -Itest supplies a stub <mint/osbind.h> so src/xpad.c builds unmodified.
 # The cast warnings are inherent to compiling code written for 32-bit
 # pointers on an LP64 host; the affected functions are never called here.
 HOSTCFLAGS  = $(WARNINGS) -O1 -std=c11 -Itest \
               -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast
 
+SRC         = src
 BUILD       = build
 
 # test runs anywhere; check needs the cross toolchain. Default to the
@@ -49,20 +50,20 @@ all: check test
 # test/abi.c is syntax checked too, so the frozen layout is asserted for
 # the architecture the ABI is for and not only for the host.
 check: | $(BUILD)
-	$(CC) $(CFLAGS) -c xpad.c -o $(BUILD)/xpad.o
+	$(CC) $(CFLAGS) -c $(SRC)/xpad.c -o $(BUILD)/xpad.o
 	$(CC) $(CFLAGS) -fsyntax-only test/abi.c
 	@echo "xpad.c compiles clean for m68000, ABI assertions hold there"
 
 # Host build of the ABI assertions. Most of the file is static
 # assertions, so a violation fails this compile rather than the run.
 test: | $(BUILD)
-	$(HOSTCC) $(HOSTCFLAGS) test/abi.c xpad.c -o $(BUILD)/abi
+	$(HOSTCC) $(HOSTCFLAGS) test/abi.c $(SRC)/xpad.c -o $(BUILD)/abi
 	@$(BUILD)/abi
 
 # The ST build of the harness. No -Itest here: it must pick up the real
 # <mint/osbind.h> and the real cookie jar at 0x5A0, not the host stubs.
-$(BUILD)/ABI.TOS: test/abi.c xpad.c xpad.h | $(BUILD)
-	$(CC) $(CFLAGS) test/abi.c xpad.c -o $@
+$(BUILD)/ABI.TOS: test/abi.c $(SRC)/xpad.c $(SRC)/xpad.h | $(BUILD)
+	$(CC) $(CFLAGS) test/abi.c $(SRC)/xpad.c -o $@
 
 st: $(BUILD)/ABI.TOS
 	@echo "built $(BUILD)/ABI.TOS, now run: make hatari"

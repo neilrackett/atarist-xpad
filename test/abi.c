@@ -20,7 +20,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../xpad.h"
+#include "../src/xpad.h"
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
 #define XPAD_ASSERT(c, m) _Static_assert(c, m)

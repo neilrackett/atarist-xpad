@@ -226,7 +226,7 @@ under Hatari before any hardware exists.
 
 ## Integrating into a port
 
-Copy `xpad.h` and `xpad.c` into the port. At around 500 lines between
+Copy `src/xpad.h` and `src/xpad.c` into the port. At around 500 lines between
 them they are not worth a submodule, particularly inside a Docker
 cross-compilation build. `XPAD_VERSION` makes drift visible if it ever matters.
 

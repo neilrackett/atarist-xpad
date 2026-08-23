@@ -10,7 +10,7 @@ publishes an `XPAD` block via the cookie jar; consumers poll it.
 
 **This repo is primarily an interface, not an implementation.** Its value
 comes from other people's code depending on the layout being stable.
-Treat `xpad.h` as a published ABI, not as source you are free to tidy.
+Treat `src/xpad.h` as a published ABI, not as source you are free to tidy.
 
 Read `README.md` before making changes. It is the spec; this file only
 covers working practices.
@@ -18,8 +18,10 @@ covers working practices.
 ## Layout
 
 ```
-xpad.h              the ABI: struct layout, button bitmask, declarations
-xpad.c              reference implementation, consumer and provider helpers
+src/xpad.h          the ABI: struct layout, button bitmask, declarations
+src/xpad.c          reference implementation, consumer and provider helpers
+src/drivers/        example providers, one per transport
+src/tools/          standalone programs, eg the diagnostic viewer
 test/abi.c          ABI assertions, mostly static; host and ST builds
 test/mint/osbind.h  host stand-in for <mint/osbind.h>
 test/run-hatari.py  boots an ST program under Hatari, relays its output
@@ -27,6 +29,10 @@ Makefile            test, check, st and hatari targets
 README.md           the specification
 LICENSE             BSD-2-Clause
 ```
+
+`src/xpad.h` and `src/xpad.c` are the only files a port copies. Everything
+under `src/drivers` and `src/tools` is a standalone program that links them,
+never something a consumer takes.
 
 ## Building and testing
 
@@ -41,7 +47,7 @@ make hatari                        run that on an emulated ST
 ```
 
 `test` is the default goal and needs nothing but a host compiler, so run
-it on every change. `check` builds `xpad.c` with `m68k-atari-mint-gcc`
+it on every change. `check` builds `src/xpad.c` with `m68k-atari-mint-gcc`
 from `atarist-toolkit-docker` and syntax checks `test/abi.c` there too,
 so the frozen layout is asserted for the target and not only for the
 host.
@@ -163,7 +169,7 @@ New and significantly modified files carry an SPDX header:
 /* SPDX-FileCopyrightText: 2026 Neil Rackett */
 ```
 
-`xpad.h` and `xpad.c` must stay BSD-2-Clause. They are compiled into
+`src/xpad.h` and `src/xpad.c` must stay BSD-2-Clause. They are compiled into
 other people's programs, several of which are GPL-2-only, and a copyleft
 core would lock those out. Do not introduce a dependency under a licence
 that would compromise this.
