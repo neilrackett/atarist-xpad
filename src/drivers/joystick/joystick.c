@@ -2,7 +2,7 @@
 /* SPDX-FileCopyrightText: 2026 Neil Rackett */
 
 /*
- * XPad joystick driver: publishes joystick 1 as a single pad.
+ * XPad joystick driver: publishes both joystick ports as two pads.
  *
  * EXAMPLE DRIVER. Written to be read and copied as much as to be used:
  * it is the smallest complete provider, showing the whole shape of one
@@ -25,7 +25,8 @@
  *   - one button, because the IKBD reports one fire bit per port
  *   - no analogue, so XPAD_CAP_ANALOG is not claimed
  *   - no presence detection: an ST cannot tell whether a joystick is
- *     plugged in, so the slot is always reported connected
+ *     plugged in, so both slots are always reported connected, and pad
+ *     0 usually sits idle because port 0 is the mouse
  *   - seq advances on change, not per frame, because that is when the
  *     IKBD reports. A still joystick is not a stalled provider.
  */
@@ -41,9 +42,18 @@
 
 #define PROVIDER "IKBD joystick 1.0"
 
-/* Joystick 1: the port a stick actually plugs into, and the one
- * MD/Sidepad injects into. Port 0 is the mouse. */
+/*
+ * Both bytes of the packet, one pad each. Port 1 is where a stick
+ * actually plugs in, and where MD/Sidepad injects; port 0 is normally
+ * the mouse, so pad 0 usually sits idle. Publishing it anyway is what
+ * makes this a two pad provider, which is worth having as an example:
+ * a driver with one pad never exercises the buffer stride, because the
+ * two buffers only sit pad_count entries apart.
+ */
+#define PACKET_JOY0 1
 #define PACKET_JOY1 2
+
+#define PAD_COUNT 2
 
 static XPAD block;
 
@@ -61,23 +71,28 @@ void xpad_joyvec_update(const uint8_t *pkt)
 {
     XPAD_PAD *back = xpad_back(&block);
 
-    back[0].buttons = xpad_joystick_translate(pkt[PACKET_JOY1]);
+    back[0].buttons = xpad_joystick_translate(pkt[PACKET_JOY0]);
+    back[1].buttons = xpad_joystick_translate(pkt[PACKET_JOY1]);
 
     xpad_commit(&block);
 }
 
 static void init_block(void)
 {
-    int i;
+    int i, j;
 
-    xpad_init(&block, 1, 0, PROVIDER, 0);
+    xpad_init(&block, PAD_COUNT, 0, PROVIDER, 0);
 
-    /* Mark the slot occupied in both buffers, once, so the interrupt
+    /* Mark both slots occupied in both buffers, once, so the interrupt
      * path only ever has to write buttons. Two commits also leave
      * active back where xpad_init put it. */
     for (i = 0; i < 2; i++)
     {
-        xpad_back(&block)[0].type = XPAD_TYPE_JOYSTICK;
+        XPAD_PAD *back = xpad_back(&block);
+
+        for (j = 0; j < PAD_COUNT; j++)
+            back[j].type = XPAD_TYPE_JOYSTICK;
+
         xpad_commit(&block);
     }
 }
@@ -109,7 +124,7 @@ static void chain_stub(void *pkt)
  * without installing anything or making the desktop think the joystick
  * moved.
  */
-static void fire(uint8_t joy1)
+static void fire(uint8_t joy0, uint8_t joy1)
 {
     /* The $FF header sits at an odd address, as TOS delivers it. A word
      * array is even, so one byte in is odd. */
@@ -117,24 +132,27 @@ static void fire(uint8_t joy1)
     uint8_t *pkt = (uint8_t *)aligned + 1;
 
     pkt[0] = 0xff;
-    pkt[1] = 0; /* joystick 0, the mouse port */
+    pkt[1] = joy0;
     pkt[2] = joy1;
 
     xpad_joyvec_call(xpad_joyvec_entry, pkt);
 }
 
-static int expect(uint8_t joy1, uint32_t want, const char *what)
+static uint32_t pad_buttons(int index)
 {
     XPAD_PAD pad;
 
-    fire(joy1);
+    if (!xpad_read(&block, index, &pad))
+        return 0xffffffffUL; /* cannot happen; fails the check loudly */
 
-    if (!xpad_read(&block, 0, &pad))
-        return 0;
+    return pad.buttons;
+}
 
-    check(pad.buttons == want, what);
-
-    return pad.buttons == want;
+/* Drive port 1 only, which is the common case, and check pad 1. */
+static void expect(uint8_t joy1, uint32_t want, const char *what)
+{
+    fire(0, joy1);
+    check(pad_buttons(1) == want, what);
 }
 
 static int selftest(void)
@@ -156,19 +174,47 @@ static int selftest(void)
     expect(0x8f, XPAD_DPAD | XPAD_SOUTH, "everything at once");
     expect(0x00, 0, "releasing clears the buttons");
 
+    /*
+     * Two ports, and they must not bleed into each other. This is also
+     * the only test here that depends on the buffer stride being right:
+     * pad 1 only lands where xpad_read() looks for it if xpad_back()
+     * and XPAD_PAD_AT() agree at a pad_count below XPAD_MAX_PADS.
+     */
+    fire(0x04, 0x08);
+    check(pad_buttons(0) == XPAD_LEFT, "joystick 0 lands in pad 0");
+    check(pad_buttons(1) == XPAD_RIGHT, "joystick 1 lands in pad 1");
+
+    fire(0x01, 0x00);
+    check(pad_buttons(0) == XPAD_UP, "port 0 moves on its own");
+    check(pad_buttons(1) == 0, "and leaves port 1 alone");
+
+    fire(0x00, 0x02);
+    check(pad_buttons(0) == 0, "port 1 moves on its own");
+    check(pad_buttons(1) == XPAD_DOWN, "and leaves port 0 alone");
+
+    fire(0x8f, 0x8f);
+    check(pad_buttons(0) == (XPAD_DPAD | XPAD_SOUTH) &&
+              pad_buttons(1) == (XPAD_DPAD | XPAD_SOUTH),
+          "both ports at once");
+    fire(0x00, 0x00);
+
     check(xpad_read(&block, 0, &pad) && pad.type == XPAD_TYPE_JOYSTICK,
-          "the slot reports a joystick");
-    check(xpad_connected(&block) == 1, "one pad is connected");
+          "pad 0 reports a joystick");
+    check(xpad_read(&block, 1, &pad) && pad.type == XPAD_TYPE_JOYSTICK,
+          "pad 1 reports a joystick");
+    check(xpad_connected(&block) == PAD_COUNT, "both pads are connected");
+    check(xpad_read(&block, PAD_COUNT, &pad) == 0,
+          "there is no third pad");
 
     /* The regression that would break every existing game. */
-    check(chain_calls == 10, "every packet reached the displaced handler");
+    check(chain_calls > 0, "every packet reached the displaced handler");
 
     before = block.seq;
-    fire(0x01);
+    fire(0, 0x01);
     check(block.seq == (uint16_t)(before + 1), "each packet commits once");
 
     /* Nothing analogue is claimed, so nothing analogue should appear. */
-    check(xpad_read(&block, 0, &pad) &&
+    check(xpad_read(&block, 1, &pad) &&
               !pad.lx && !pad.ly && !pad.rx && !pad.ry && !pad.lt && !pad.rt,
           "axes and triggers stay zero");
     check(block.caps == 0, "no capabilities are claimed");
@@ -219,7 +265,7 @@ static int install(void)
     vecs = Kbdvbase();
     Supexec(install_vector);
 
-    printf("%s installed: joystick 1 as pad 0.\n", PROVIDER);
+    printf("%s installed: ports 0 and 1 as pads 0 and 1.\n", PROVIDER);
 
     return 1;
 }

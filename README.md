@@ -239,18 +239,27 @@ limits are listed below rather than left for you to discover.
 
 ### joystick, via joyvec
 
-Publishes joystick 1 as one pad: the d-pad and `XPAD_SOUTH`. Works on
-any ST ever made, which makes it the floor the ladder above rests on.
-Because MD/Sidepad synthesises `joyvec` packets to inject a Bluetooth
-controller, this picks that up too, with no change on its side.
+Publishes both joystick ports as two pads, each with the d-pad and
+`XPAD_SOUTH`. Works on any ST ever made, which makes it the floor the
+ladder above rests on. Because MD/Sidepad synthesises `joyvec` packets
+to inject a Bluetooth controller, this picks that up too, with no
+change on its side.
+
+It publishes two pads partly because the packet carries both bytes
+anyway, and partly because a single pad provider never exercises the
+buffer stride: the two buffers sit `pad_count` entries apart, so they
+only overlap the declared array when `pad_count` is `XPAD_MAX_PADS`.
+A two pad example is the smallest one that would notice if that ever
+broke.
 
 - **One button.** The IKBD reports a single fire bit per port. This is
   not a shortcut in the driver; there is no second bit to read.
 - **No analogue.** `XPAD_CAP_ANALOG` is not claimed, and the sticks and
   triggers read zero.
 - **No presence detection.** An ST cannot tell whether a joystick is
-  plugged in, so the slot always reports connected, plugged in or not.
-- **Joystick 1 only.** Port 0 is the mouse.
+  plugged in, so both slots always report connected, plugged in or not.
+- **Pad 0 usually sits idle.** Port 0 is normally the mouse, so unless
+  something is driving it, only pad 1 will ever move.
 - **`seq` advances on change**, not per frame, because that is when the
   IKBD reports. A still joystick is not a stalled provider.
 - **It can be cut out.** A program that installs a `joyvec` handler and
@@ -284,7 +293,8 @@ comma and period to the shoulders, Tab to select and Esc to start.
 
 - **Rumble or LEDs.** Both pass NULL for `req`, so `xpad_req()` returns
   NULL and neither claims `XPAD_CAP_RUMBLE` or `XPAD_CAP_LED`.
-- **More than one pad**, though the ABI carries four.
+- **More than two pads**, though the ABI carries four. The keyboard
+  driver publishes one, the joystick driver two.
 - **Coexist with another provider.** XPad is single provider, so both
   refuse to install when an `XPAD` cookie is already present rather than
   displace something better.

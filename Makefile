@@ -149,6 +149,8 @@ hatari-view:
 # only test where provider and consumer are different processes.
 hatari-integration:
 	@test -f $(BUILD)/VIEWTEST.TOS || { echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
+	@python3 test/run-hatari.py $(BUILD)/VIEWTEST.TOS $(BUILD)/XPADJOY.PRG
+	@echo
 	@python3 test/run-hatari.py $(BUILD)/VIEWTEST.TOS $(BUILD)/XPADKEY.PRG
 
 $(BUILD):
