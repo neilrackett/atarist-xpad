@@ -2,8 +2,9 @@
 # SPDX-FileCopyrightText: 2026 Neil Rackett
 
 #
-# xpad is consumed by copying src/xpad.h and src/xpad.c into a port, so
-# this Makefile deliberately builds no library. It exists to prove the
+# xpad is consumed by copying src/xpad.h and src/xpad.c into a port, and
+# src/xpad_provider.c as well if it publishes rather than reads. This
+# Makefile deliberately builds no library. It exists to prove the
 # reference implementation still compiles for the ST, and to run the ABI
 # assertions on the host.
 #
@@ -29,7 +30,7 @@ CC          = m68k-atari-mint-gcc
 CFLAGS      = $(WARNINGS) -O2 -fomit-frame-pointer -m68000
 
 HOSTCC      = cc
-# -Itest supplies a stub <mint/osbind.h> so src/xpad.c builds unmodified.
+# -Itest supplies a stub <mint/osbind.h> so both halves build unmodified.
 # The cast warnings are inherent to compiling code written for 32-bit
 # pointers on an LP64 host; the affected functions are never called here.
 HOSTCFLAGS  = $(WARNINGS) -O1 -std=c11 -Itest \
@@ -55,7 +56,7 @@ check: | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/xpad.c -o $(BUILD)/xpad.o
 	$(CC) $(CFLAGS) -c $(SRC)/xpad_provider.c -o $(BUILD)/xpad_provider.o
 	$(CC) $(CFLAGS) -fsyntax-only test/abi.c
-	@echo "xpad.c compiles clean for m68000, ABI assertions hold there"
+	@echo "both halves compile clean for m68000, ABI assertions hold there"
 
 # Host build of the ABI assertions. Most of the file is static
 # assertions, so a violation fails this compile rather than the run.
@@ -128,31 +129,26 @@ st: $(BUILD)/ABI.TOS $(BUILD)/XPADJOY.PRG $(BUILD)/JOYTEST.TOS \
 
 # Runs on the host, not in the container, since that is where Hatari is.
 hatari:
-	@test -f $(BUILD)/ABI.TOS || { echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
 	@python3 test/run-hatari.py $(BUILD)/ABI.TOS
 
 # The joystick driver's self test on an emulated ST: it drives the real
 # trampoline with fabricated packets and installs nothing.
 hatari-joystick:
-	@test -f $(BUILD)/JOYTEST.TOS || { echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
 	@python3 test/run-hatari.py $(BUILD)/JOYTEST.TOS
 
 # The keyboard driver's self test, likewise.
 hatari-keyboard:
-	@test -f $(BUILD)/KEYTEST.TOS || { echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
 	@python3 test/run-hatari.py $(BUILD)/KEYTEST.TOS
 
 # The viewer against its own demo provider: publishes a block, finds it
 # through the cookie, reads it back and prints one frame.
 hatari-view:
-	@test -f $(BUILD)/VIEWTEST.TOS || { echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
 	@python3 test/run-hatari.py $(BUILD)/VIEWTEST.TOS
 
 # End to end: a driver installed from AUTO, then a separate program
 # finding it through the cookie jar and reading its pads. This is the
 # only test where provider and consumer are different processes.
 hatari-integration:
-	@test -f $(BUILD)/VIEWTEST.TOS || { echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
 	@python3 test/run-hatari.py $(BUILD)/VIEWTEST.TOS $(BUILD)/XPADJOY.PRG
 	@echo
 	@python3 test/run-hatari.py $(BUILD)/VIEWTEST.TOS $(BUILD)/XPADKEY.PRG

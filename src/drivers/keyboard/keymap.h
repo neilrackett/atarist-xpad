@@ -63,9 +63,8 @@ static const XPAD_KEYMAP xpad_keymap[] = {
 #define XPAD_KEYMAP_COUNT (sizeof(xpad_keymap) / sizeof(xpad_keymap[0]))
 
 /* Buttons this driver can ever set. Nothing outside it may appear. */
-#define XPAD_KEYMAP_BUTTONS                                        \
-    (XPAD_DPAD | XPAD_SOUTH | XPAD_EAST | XPAD_WEST | XPAD_NORTH | \
-     XPAD_TL | XPAD_TR | XPAD_SELECT | XPAD_START)
+#define XPAD_KEYMAP_BUTTONS \
+    (XPAD_DPAD | XPAD_FACE | XPAD_TL | XPAD_TR | XPAD_SELECT | XPAD_START)
 
 /* The Xpad button for a make code, or 0 when the key is not mapped. */
 static uint32_t xpad_keymap_lookup(uint8_t scancode)

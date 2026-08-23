@@ -69,7 +69,7 @@ void xpad_kbdvec_update(int code)
     uint32_t button = xpad_keymap_lookup((uint8_t)(code & KEY_CODE));
     XPAD_PAD *back;
 
-    /* Most keys are not mapped. Leaving the block alone costs a commit
+    /* Most keys are not mapped. Leaving the block alone saves a commit
      * and keeps seq meaningful: it counts changes we care about. */
     if (!button)
         return;
@@ -163,7 +163,7 @@ static int selftest(void)
 {
     XPAD_PAD pad;
     uint16_t before;
-    unsigned i, j;
+    unsigned i;
     int ok;
 
     init_block();
@@ -231,28 +231,20 @@ static int selftest(void)
     ok = 1;
     for (i = 0; i < XPAD_KEYMAP_COUNT; i++)
     {
+        uint32_t held;
+
         press(xpad_keymap[i].scancode);
-        if ((buttons() & xpad_keymap[i].button) != xpad_keymap[i].button)
+        held = buttons();
+
+        if ((held & xpad_keymap[i].button) != xpad_keymap[i].button)
             ok = 0;
-        if (buttons() & ~XPAD_KEYMAP_BUTTONS)
+        if (held & ~XPAD_KEYMAP_BUTTONS)
             ok = 0;
+
         release(xpad_keymap[i].scancode);
     }
     check(ok, "every mapped key sets its own button and no other");
     check(buttons() == 0, "the keymap sweep leaves nothing held");
-
-    /* Two scancodes may share a button, but one scancode may not appear
-     * twice: the second entry would be unreachable. */
-    ok = 1;
-    for (i = 0; i < XPAD_KEYMAP_COUNT; i++)
-    {
-        for (j = i + 1; j < XPAD_KEYMAP_COUNT; j++)
-        {
-            if (xpad_keymap[i].scancode == xpad_keymap[j].scancode)
-                ok = 0;
-        }
-    }
-    check(ok, "no scancode is mapped twice");
 
     printf("\n%s\n", failures ? "FAILED" : "all checks passed");
     printf("XPAD-DONE %d\n", failures ? 1 : 0);

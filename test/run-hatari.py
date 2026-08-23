@@ -4,15 +4,15 @@
 
 """Run an Atari ST program under Hatari and relay its console output.
 
-Boots EmuTOS with the program's own directory as drive C, autostarts the
-program, and pipes the ST console back to stdout.
+Boots EmuTOS with a temporary directory holding only the program as
+drive C, autostarts it, and pipes the ST console back to stdout.
 
 Hatari cannot pass an exit status out, and sits at the desktop once the
 program returns, so the program prints a final "XPAD-DONE <rc>" line.
 This waits for that, stops the emulator, and exits with the same code.
 
-Override the emulator and TOS image with $HATARI and $TOS if the guesses
-below are wrong.
+Override the emulator, TOS image and machine with $HATARI, $TOS and
+$MACHINE if the guesses below are wrong.
 """
 
 import os
@@ -109,7 +109,7 @@ def main():
         cmd = [
             hatari,
             "--tos", tos,
-            "--machine", "st",
+            "--machine", os.environ.get("MACHINE", "st"),
             "--memsize", "4",
             "--harddrive", drive_c,
             "--auto", "C:\\" + name,

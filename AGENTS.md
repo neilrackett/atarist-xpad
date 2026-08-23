@@ -21,10 +21,12 @@ covers working practices.
 src/xpad.h          the ABI: struct layout, button bitmask, declarations
 src/xpad.c          consumer half: find a block and read it
 src/xpad_provider.c provider half: own a block and publish it
-src/drivers/joystick  example provider: joystick 1 as one pad
+src/drivers/joystick  example provider: both joystick ports as two pads
 src/drivers/keyboard  example provider: DOOM controls as one pad
 src/tools/xpadview.c  live viewer, and the reference consumer
 test/abi.c          ABI assertions, mostly static; host and ST builds
+test/joystick.c     IKBD translation tests, host only
+test/keyboard.c     keymap tests, host only
 test/mint/osbind.h  host stand-in for <mint/osbind.h>
 test/run-hatari.py  boots an ST program under Hatari, relays its output
 verify.sh           runs every test, across both toolchains
@@ -41,8 +43,9 @@ consumer takes.
 **Keep the two halves apart.** There is no section garbage collection on
 `m68k-atari-mint`, so the linker's unit is the object file: anything the
 provider helpers are folded into gets carried by every game that reads a
-pad, uncalled. The split is worth 588 bytes to a consumer, measured, and
-that is the whole reason it exists. `xpad_jar_seek()` is deliberately the
+pad, uncalled. The provider half is 568 bytes a consumer
+no longer carries, measured, and that is the whole reason it exists.
+`xpad_jar_seek()` is deliberately the
 one thing shared, because duplicating the jar walk is how the two halves
 would drift apart.
 
@@ -74,7 +77,7 @@ make hatari                        ABI assertions on an emulated ST
 make hatari-joystick               joystick driver self test
 make hatari-keyboard               keyboard driver self test
 make hatari-view                   viewer against its demo provider
-make hatari-integration            driver from AUTO, viewer reads it
+make hatari-integration            drivers from AUTO, viewer reads them
 ```
 
 There is deliberately no `make` target that runs the lot: `st` needs the
@@ -87,15 +90,16 @@ separate processes, so it is the one that proves residency, the cookie
 and the consumer path together. Prefer breaking it over letting it rot.
 
 `test` is the default goal and needs nothing but a host compiler, so run
-it on every change. `check` builds `src/xpad.c` with `m68k-atari-mint-gcc`
+it on every change. `check` builds both halves with `m68k-atari-mint-gcc`
 from `atarist-toolkit-docker` and syntax checks `test/abi.c` there too,
 so the frozen layout is asserted for the target and not only for the
 host.
 
 `st` and `hatari` are two commands rather than one because the build
-needs the container and the emulator does not. `hatari` boots EmuTOS
-headless with `build` as drive C, autostarts the harness, and exits with
-its status. It needs Hatari and a TOS image; set `$HATARI` or `$TOS` if
+needs the container and the emulator does not. `hatari` copies the
+program into a temporary directory, boots EmuTOS headless with that as
+drive C, and exits with its status. It needs Hatari and a TOS image; set
+`$HATARI` or `$TOS` if
 they are not found. Note that `make` reports a failing recipe as exit 2,
 so check the printed verdict rather than the code.
 
@@ -105,7 +109,8 @@ works; nothing here runs on real hardware, and there is no CI that can
 catch a 68000-specific mistake for you.
 
 Drivers follow the same split. Anything with logic worth getting wrong
-lives in a TOS-free header the host build tests (`translate.h`), and
+lives in a TOS-free header the host build tests (`translate.h`,
+`keymap.h`), and
 whatever needs an ST gets a self test in the driver itself, built as a
 separate binary because Hatari's `--auto` takes a path and no arguments.
 
@@ -195,8 +200,8 @@ Listed so they do not get helpfully undone:
   user mode access down there, which is why reading `_sysbase` at
   `$4f2` and the cookie jar at `$5a0` both go through it.
 - A driver must always chain to the handler it displaced. One that
-  swallows packets breaks the desktop and every existing game, so the
-  joystick self test checks for it explicitly.
+  swallows packets breaks the desktop and every existing game, so both
+  driver self tests check for it explicitly.
 - `xpad_fold_stick()` uses a radial deadzone, three word multiplies,
   which is acceptable at VBL rate. Do not "optimise" it into a box test:
   a box test rejects diagonals whose magnitude clears the threshold, so
@@ -219,7 +224,9 @@ Follow the existing file exactly rather than any general convention.
 - Prose in comments and docs avoids em dashes. Use colons, commas or
   shorter sentences.
 - ASM only where extreme optimisation is genuinely needed, which so far
-  is nowhere in this repo.
+  is nowhere in this repo. The two vector trampolines are ABI glue, not
+  optimisation: a vector hands its argument in a register, which is not
+  the m68k C calling convention.
 
 ## Licensing
 
@@ -256,6 +263,5 @@ Not yet written, listed so contributions land in the right place:
 - **IKBD fallback shim**: publishes an `XPAD` block synthesised from
   joystick 0, joystick 1's fire bit as a second button, and the keyboard.
   Lets a port implement only the xpad path and still work on a bare ST.
-- **Diagnostic TOS program**: live state for all four pads.
 - **Hatari stub provider**: driven by emulated joysticks, so the spec can
   be developed against without hardware.

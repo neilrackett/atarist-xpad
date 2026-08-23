@@ -221,8 +221,10 @@ this order:
 
 A shim that publishes an `XPAD` block populated from steps 2 to 4 lets a
 port implement only step 1 and get the rest for nothing. Two such
-drivers ship here, covering steps 3 and 4. Step 2, the STE enhanced
-ports, is still to write.
+drivers ship here, covering a plain joystick and the keyboard. Step 2,
+the STE enhanced ports, is still to write, and so is step 3's trick of
+borrowing joystick 1's fire bit as a second button: the joystick driver
+publishes each port as its own pad rather than merging them.
 
 ## Example drivers
 
@@ -301,9 +303,9 @@ comma and period to the shoulders, Tab to select and Esc to start.
 
 ### Where they have been tested
 
-Both run self tests on an emulated ST under Hatari, and the keyboard
-driver is additionally exercised end to end: installed resident from
-`AUTO`, then read by a separate program through the cookie jar.
+Both run self tests on an emulated ST under Hatari, and both are
+additionally exercised end to end: installed resident from `AUTO`, then
+read by a separate program through the cookie jar.
 
 **Neither has been run on real hardware.** That is the distance between
 "passes its tests" and "works", and it is worth closing before trusting
@@ -378,7 +380,8 @@ into every binary without ever calling them: 684 bytes against 1252,
 measured, which is real money on a 512K machine.
 
 At around 500 lines they are not worth a submodule, particularly inside
-a Docker cross-compilation build. `XPAD_VERSION` makes drift visible if it ever matters.
+a Docker cross-compilation build. `XPAD_VERSION` makes drift visible if
+it ever matters.
 
 Because the licence is BSD-2-Clause, a port that ships a binary must
 reproduce the copyright notice in its accompanying documentation. One

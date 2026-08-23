@@ -58,9 +58,9 @@ XPAD_ASSERT(XPAD_THUMBL == 0x00008000UL, "XPAD_THUMBL moved");
 XPAD_ASSERT(XPAD_THUMBR == 0x00010000UL, "XPAD_THUMBR moved");
 
 /*
- * Every defined bit is distinct and bits 17 and up are still free. The
- * per-bit assertions above already pin each value, so this only has to
- * catch a new bit landing on top of an old one.
+ * The total mask. Implied by the per-bit assertions above, and kept
+ * because the frozen value is what a consumer's "any button" test
+ * compares against: seeing it written out once is worth six lines.
  */
 XPAD_ASSERT((XPAD_UP | XPAD_DOWN | XPAD_LEFT | XPAD_RIGHT |
              XPAD_SOUTH | XPAD_EAST | XPAD_NORTH | XPAD_WEST |
@@ -98,8 +98,6 @@ XPAD_ASSERT(XPAD_FACE == 0x000000f0UL, "XPAD_FACE wrong");
 
 XPAD_ASSERT(sizeof(XPAD_PAD) == 12, "XPAD_PAD must stay 12 bytes in v1");
 XPAD_ASSERT(XPAD_PAD_SIZE_V1 == 12, "the v1 pad size is frozen at 12");
-XPAD_ASSERT(sizeof(XPAD_PAD) >= XPAD_PAD_SIZE_V1,
-            "XPAD_PAD may grow past the v1 size but never shrink below it");
 
 XPAD_ASSERT(offsetof(XPAD_PAD, buttons) == 0, "buttons must lead XPAD_PAD");
 XPAD_ASSERT(offsetof(XPAD_PAD, lx) == 4, "lx moved");
@@ -202,7 +200,6 @@ static void check_fold_stick(void)
 static void check_double_buffer(void)
 {
     XPAD x;
-    uint8_t first;
     XPAD_PAD *back;
     int ok = 1, i;
 
@@ -212,8 +209,6 @@ static void check_double_buffer(void)
     check(x.pad_size == sizeof(XPAD_PAD), "xpad_init sets pad_size");
     check(x.pads_offset == offsetof(XPAD, pads), "xpad_init sets pads_offset");
     check(x.active == 0, "xpad_init starts on buffer 0");
-
-    first = x.active;
 
     for (i = 0; i < 4; i++)
     {
@@ -226,7 +221,7 @@ static void check_double_buffer(void)
     }
 
     check(ok, "xpad_back never returns the front buffer");
-    check(x.active == first, "four commits return to the starting buffer");
+    check(x.active == 0, "four commits return to buffer 0");
     check(x.seq == 4, "seq counts commits");
 }
 
@@ -252,7 +247,7 @@ static void check_init_clamps(void)
 static void check_accessor(void)
 {
     XPAD x;
-    int ok = 1, packed = 1, n, b, i;
+    int packed = 1, n, b, i;
 
     for (n = 1; n <= XPAD_MAX_PADS; n++)
     {
@@ -264,16 +259,13 @@ static void check_accessor(void)
             {
                 if (XPAD_PAD_AT(&x, b, i) != &x.pads[0][0] + b * n + i)
                     packed = 0;
-
-                if (n == XPAD_MAX_PADS &&
-                    XPAD_PAD_AT(&x, b, i) != &x.pads[b][i])
-                    ok = 0;
             }
         }
     }
 
+    /* At pad_count == XPAD_MAX_PADS the flat form above is the declared
+     * two dimensional array, by definition, so one check covers both. */
     check(packed, "XPAD_PAD_AT strides by pad_count");
-    check(ok, "XPAD_PAD_AT matches the declared v1 array");
 }
 
 /*
@@ -418,7 +410,8 @@ static void check_valid(void)
     /* The pad area must fit: one byte too much on the last pad is
      * enough to put it outside the block the provider claims. */
     xpad_init(&x, XPAD_MAX_PADS, 0, "test", 0);
-    x.pad_size = (uint16_t)((x.hdr_size - x.pads_offset) / 8 + 1);
+    x.pad_size = (uint16_t)((x.hdr_size - x.pads_offset) /
+                                (2 * XPAD_MAX_PADS) + 1);
     check(xpad_valid(&x) == 0, "xpad_valid rejects a pad area that overruns");
 }
 

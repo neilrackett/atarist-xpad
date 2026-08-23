@@ -3,7 +3,8 @@
 
 /*
  * Host stand-in for <mint/osbind.h>, used only by the ABI harness so
- * that xpad.c compiles unmodified with a native compiler.
+ * that xpad.c and xpad_provider.c compile unmodified with a
+ * native compiler.
  *
  * Supexec has no privilege to model here, so it just calls through.
  * XPAD_JAR is redirected at a variable the harness owns, since 0x5A0

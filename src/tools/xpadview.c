@@ -141,7 +141,7 @@ static void button_states(uint32_t held, unsigned from, unsigned to)
 static XPAD demo;
 static XPAD_REQ demo_req;
 
-/* Quarter turn of a circle in eighths, scaled to a stick's range. */
+/* A full turn of a circle in eighths, scaled to a stick's range. */
 static const int8_t wave[8] = {0, 90, 127, 90, 0, -90, -127, -90};
 
 static void demo_init(void)
@@ -188,32 +188,17 @@ static void demo_frame(unsigned tick)
 /*
  * xpad_find() returns NULL both when no provider is installed and when
  * one is installed but malformed, and those are completely different
- * problems. Walk the jar directly to tell them apart: worth duplicating
- * ten lines so a provider author gets a useful message.
+ * problems. xpad_jar_seek() is the unvalidated lookup, so the raw cookie
+ * is one call away rather than a second copy of the jar walk.
  */
-
-#define JAR (*(uint32_t **)0x5A0L)
 
 static void *raw_cookie;
 
 static long find_raw(void)
 {
-    uint32_t *jar = JAR;
+    uint32_t *slot = xpad_jar_seek();
 
-    raw_cookie = 0;
-
-    if (jar)
-    {
-        while (jar[0])
-        {
-            if (jar[0] == XPAD_COOKIE)
-            {
-                raw_cookie = (void *)jar[1];
-                break;
-            }
-            jar += 2;
-        }
-    }
+    raw_cookie = (slot && slot[0]) ? (void *)slot[1] : 0;
 
     return 0;
 }
@@ -292,17 +277,15 @@ static void draw_pad(const XPAD *x, int sel)
 
     if (!xpad_read(x, sel, &pad))
     {
+        int row;
+
         printf("Pad %d is not present.%-18s", sel, "");
-        at(6, 0);
-        printf("%-40s", "");
-        at(7, 0);
-        printf("%-40s", "");
-        at(8, 0);
-        printf("%-40s", "");
-        at(9, 0);
-        printf("%-40s", "");
-        at(10, 0);
-        printf("%-40s", "");
+
+        for (row = 6; row <= 10; row++)
+        {
+            at(row, 0);
+            printf("%-40s", "");
+        }
         return;
     }
 
