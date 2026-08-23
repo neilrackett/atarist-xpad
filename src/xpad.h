@@ -321,6 +321,23 @@ extern "C"
     int xpad_publish(XPAD *x);
     int xpad_unpublish(void);
 
+    /* ------------------------------------------------------------------ */
+    /* Internal                                                            */
+    /* ------------------------------------------------------------------ */
+
+    /*
+     * Not part of the ABI. Shared between xpad.c and xpad_provider.c
+     * because both halves walk the jar, and duplicating the walk is how
+     * the two would drift apart.
+     *
+     * Returns the slot holding the XPAD cookie, the terminator when the
+     * cookie is absent, or 0 when there is no jar. **Supervisor mode
+     * only**: the jar pointer lives at 0x5A0 and the ST bus errors on
+     * user mode access below 0x800. Call it from inside Supexec, as
+     * xpad_find() and xpad_publish() do, or not at all.
+     */
+    uint32_t *xpad_jar_seek(void);
+
 #ifdef __cplusplus
 }
 #endif

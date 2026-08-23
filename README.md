@@ -366,9 +366,19 @@ letters printed on a pad, deliberately. See the X/Y trap above.
 
 ## Integrating into a port
 
-Copy `src/xpad.h` and `src/xpad.c` into the port. At around 500 lines between
-them they are not worth a submodule, particularly inside a Docker
-cross-compilation build. `XPAD_VERSION` makes drift visible if it ever matters.
+Copy `src/xpad.h` and `src/xpad.c` into the port. If you are writing a
+provider rather than consuming one, take `src/xpad_provider.c` too:
+`xpad.c` is the consumer half, and `xpad_provider.c` adds the helpers
+for owning and publishing a block.
+
+The split is there because there is no section garbage collection on
+`m68k-atari-mint`, so the linker's unit is the object file. A game that
+linked one file with both halves in it would carry the provider helpers
+into every binary without ever calling them: 684 bytes against 1252,
+measured, which is real money on a 512K machine.
+
+At around 500 lines they are not worth a submodule, particularly inside
+a Docker cross-compilation build. `XPAD_VERSION` makes drift visible if it ever matters.
 
 Because the licence is BSD-2-Clause, a port that ships a binary must
 reproduce the copyright notice in its accompanying documentation. One

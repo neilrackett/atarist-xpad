@@ -19,7 +19,8 @@ covers working practices.
 
 ```
 src/xpad.h          the ABI: struct layout, button bitmask, declarations
-src/xpad.c          reference implementation, consumer and provider helpers
+src/xpad.c          consumer half: find a block and read it
+src/xpad_provider.c provider half: own a block and publish it
 src/drivers/joystick  example provider: joystick 1 as one pad
 src/drivers/keyboard  example provider: DOOM controls as one pad
 src/tools/xpadview.c  live viewer, and the reference consumer
@@ -32,9 +33,18 @@ README.md           the specification
 LICENSE             BSD-2-Clause
 ```
 
-`src/xpad.h` and `src/xpad.c` are the only files a port copies. Everything
-under `src/drivers` and `src/tools` is a standalone program that links them,
-never something a consumer takes.
+`src/xpad.h` and `src/xpad.c` are what a consumer copies; a provider takes
+`src/xpad_provider.c` as well. Everything under `src/drivers` and
+`src/tools` is a standalone program that links them, never something a
+consumer takes.
+
+**Keep the two halves apart.** There is no section garbage collection on
+`m68k-atari-mint`, so the linker's unit is the object file: anything the
+provider helpers are folded into gets carried by every game that reads a
+pad, uncalled. The split is worth 588 bytes to a consumer, measured, and
+that is the whole reason it exists. `xpad_jar_seek()` is deliberately the
+one thing shared, because duplicating the jar walk is how the two halves
+would drift apart.
 
 **The drivers are examples first.** They exist so somebody writing a
 provider for their own transport has a complete, working one to copy,
@@ -220,7 +230,8 @@ New and significantly modified files carry an SPDX header:
 /* SPDX-FileCopyrightText: 2026 Neil Rackett */
 ```
 
-`src/xpad.h` and `src/xpad.c` must stay BSD-2-Clause. They are compiled into
+`src/xpad.h`, `src/xpad.c` and `src/xpad_provider.c` must stay
+BSD-2-Clause. They are compiled into
 other people's programs, several of which are GPL-2-only, and a copyleft
 core would lock those out. Do not introduce a dependency under a licence
 that would compromise this.

@@ -53,6 +53,7 @@ all: check test
 # the architecture the ABI is for and not only for the host.
 check: | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/xpad.c -o $(BUILD)/xpad.o
+	$(CC) $(CFLAGS) -c $(SRC)/xpad_provider.c -o $(BUILD)/xpad_provider.o
 	$(CC) $(CFLAGS) -fsyntax-only test/abi.c
 	@echo "xpad.c compiles clean for m68000, ABI assertions hold there"
 
@@ -61,7 +62,7 @@ check: | $(BUILD)
 # Driver translation logic runs here too: it is pure logic, kept free of
 # TOS dependencies precisely so it does not need the emulator.
 test: | $(BUILD)
-	$(HOSTCC) $(HOSTCFLAGS) test/abi.c $(SRC)/xpad.c -o $(BUILD)/abi
+	$(HOSTCC) $(HOSTCFLAGS) test/abi.c $(SRC)/xpad.c $(SRC)/xpad_provider.c -o $(BUILD)/abi
 	@$(BUILD)/abi
 	@echo
 	$(HOSTCC) $(HOSTCFLAGS) test/joystick.c -o $(BUILD)/joy
@@ -72,13 +73,14 @@ test: | $(BUILD)
 
 # The ST build of the harness. No -Itest here: it must pick up the real
 # <mint/osbind.h> and the real cookie jar at 0x5A0, not the host stubs.
-$(BUILD)/ABI.TOS: test/abi.c $(SRC)/xpad.c $(SRC)/xpad.h | $(BUILD)
-	$(CC) $(CFLAGS) test/abi.c $(SRC)/xpad.c -o $@
+$(BUILD)/ABI.TOS: test/abi.c $(SRC)/xpad.c $(SRC)/xpad_provider.c $(SRC)/xpad.h | $(BUILD)
+	$(CC) $(CFLAGS) test/abi.c $(SRC)/xpad.c $(SRC)/xpad_provider.c -o $@
 
 # Drivers are whole programs, not part of the library, so each gets its
 # own directory: this one needs a joyvec trampoline the core never does.
 JOYDIR = $(DRIVERS)/joystick
-JOYSRC = $(JOYDIR)/joystick.c $(JOYDIR)/joyvec.s $(SRC)/xpad.c
+JOYSRC = $(JOYDIR)/joystick.c $(JOYDIR)/joyvec.s $(SRC)/xpad.c \
+         $(SRC)/xpad_provider.c
 JOYDEP = $(JOYSRC) $(JOYDIR)/translate.h $(SRC)/xpad.h
 
 $(BUILD)/XPADJOY.PRG: $(JOYDEP) | $(BUILD)
@@ -91,7 +93,8 @@ $(BUILD)/JOYTEST.TOS: $(JOYDEP) | $(BUILD)
 	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(JOYSRC) -o $@
 
 KEYDIR = $(DRIVERS)/keyboard
-KEYSRC = $(KEYDIR)/keyboard.c $(KEYDIR)/kbdvec.s $(SRC)/xpad.c
+KEYSRC = $(KEYDIR)/keyboard.c $(KEYDIR)/kbdvec.s $(SRC)/xpad.c \
+         $(SRC)/xpad_provider.c
 KEYDEP = $(KEYSRC) $(KEYDIR)/keymap.h $(SRC)/xpad.h
 
 $(BUILD)/XPADKEY.PRG: $(KEYDEP) | $(BUILD)
@@ -102,7 +105,7 @@ $(BUILD)/KEYTEST.TOS: $(KEYDEP) | $(BUILD)
 
 # Standalone programs that link the core but are not part of it.
 TOOLS  = $(SRC)/tools
-VIEWSRC = $(TOOLS)/xpadview.c $(SRC)/xpad.c
+VIEWSRC = $(TOOLS)/xpadview.c $(SRC)/xpad.c $(SRC)/xpad_provider.c
 VIEWDEP = $(VIEWSRC) $(SRC)/xpad.h
 
 $(BUILD)/XPADVIEW.PRG: $(VIEWDEP) | $(BUILD)
