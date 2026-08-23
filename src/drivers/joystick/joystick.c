@@ -4,10 +4,15 @@
 /*
  * XPad joystick driver: publishes joystick 1 as a single pad.
  *
- * Proof of concept, and the simplest possible provider: four directions
- * and one button, which is the whole of what the IKBD reports for a
- * port. It needs no periodic hook at all, because joyvec is called for
- * us whenever the joystick changes.
+ * EXAMPLE DRIVER. Written to be read and copied as much as to be used:
+ * it is the smallest complete provider, showing the whole shape of one
+ * in as little code as possible. Start here if you are writing a driver
+ * for a transport of your own. See "Example drivers" in README for the
+ * full list of what it does not do.
+ *
+ * Four directions and one button, which is the whole of what the IKBD
+ * reports for a port. It needs no periodic hook at all, because joyvec
+ * is called for us whenever the joystick changes.
  *
  * Because MD/Sidepad synthesises joyvec packets to inject its Bluetooth
  * controller, this driver picks that up with no firmware change.

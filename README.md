@@ -220,27 +220,139 @@ this order:
 4. Plain joystick plus keyboard.
 
 A shim that publishes an `XPAD` block populated from steps 2 to 4 lets a
-port implement only step 1 and get the rest for nothing.
+port implement only step 1 and get the rest for nothing. Two such
+drivers ship here, covering steps 3 and 4. Step 2, the STE enhanced
+ports, is still to write.
 
-Two of these exist:
+## Example drivers
 
-- `src/drivers/joystick` hooks `joyvec` and publishes joystick 1 as one
-  pad: four directions and one button, which is everything the IKBD
-  reports for a port. It works on any ST ever made, so it is the floor
-  the ladder above rests on.
-- `src/drivers/keyboard` hooks `kbdvec` and publishes the keyboard as
-  one pad, using DOOM's default controls. It needs TOS 2.0 or later,
-  because older TOS cannot report key releases.
+**The drivers in `src/drivers` are examples.** They exist to be read and
+copied, not because they are the best possible drivers for the hardware
+they touch. Each one shows the whole shape of a provider in as little
+code as possible: publish a block, hook something, fill the back buffer,
+commit. If you are writing a driver for a transport of your own, start
+from whichever is closest and replace the middle.
 
-Both chain to the handler they displace, so an existing joystick and the
-keyboard carry on working normally. Step 2 of the ladder, the STE
-enhanced ports, is still to write.
+They are also meant to genuinely work, because an example that does not
+teaches the wrong things. But every one of them is limited, and the
+limits are listed below rather than left for you to discover.
+
+### joystick, via joyvec
+
+Publishes joystick 1 as one pad: the d-pad and `XPAD_SOUTH`. Works on
+any ST ever made, which makes it the floor the ladder above rests on.
+Because MD/Sidepad synthesises `joyvec` packets to inject a Bluetooth
+controller, this picks that up too, with no change on its side.
+
+- **One button.** The IKBD reports a single fire bit per port. This is
+  not a shortcut in the driver; there is no second bit to read.
+- **No analogue.** `XPAD_CAP_ANALOG` is not claimed, and the sticks and
+  triggers read zero.
+- **No presence detection.** An ST cannot tell whether a joystick is
+  plugged in, so the slot always reports connected, plugged in or not.
+- **Joystick 1 only.** Port 0 is the mouse.
+- **`seq` advances on change**, not per frame, because that is when the
+  IKBD reports. A still joystick is not a stalled provider.
+- **It can be cut out.** A program that installs a `joyvec` handler and
+  does not chain will stop this driver seeing packets. Nothing can be
+  done about that from this side.
+
+### keyboard, via kbdvec
+
+Publishes the keyboard as one pad, using DOOM's default controls: arrows
+to the d-pad, Ctrl to fire, Space to use, Alt to strafe, Shift to run,
+comma and period to the shoulders, Tab to select and Esc to start.
+
+- **Needs TOS 2.0 or later**, and refuses to install below it. Knowing
+  which keys are *held* needs make and break codes, and only `kbdvec`,
+  four bytes below `Kbdvbase()`, carries releases. Older TOS has no such
+  vector, and reaching them through `ikbdsys` does not work: reading the
+  ACIA data register destroys the status bits, so a driver cannot both
+  look at a byte and let TOS have it. EmuTOS reports 2.06, so testing
+  under an emulator will not warn you about this.
+- **No analogue**, as above.
+- **Five buttons are unmapped**: `XPAD_TL2`, `XPAD_TR2`, `XPAD_MODE`,
+  `XPAD_THUMBL` and `XPAD_THUMBR`. DOOM has no key that means them, and
+  inventing controls would make the example lie about the hardware.
+- **The mapping is fixed.** There is no configuration. Change the table
+  in `keymap.h` and rebuild.
+- **A keyboard is not a pad.** Keyboard matrices limit which
+  combinations of keys register together, so some multi-key holds a game
+  would expect from a controller will not all arrive.
+
+### What neither driver does
+
+- **Rumble or LEDs.** Both pass NULL for `req`, so `xpad_req()` returns
+  NULL and neither claims `XPAD_CAP_RUMBLE` or `XPAD_CAP_LED`.
+- **More than one pad**, though the ABI carries four.
+- **Coexist with another provider.** XPad is single provider, so both
+  refuse to install when an `XPAD` cookie is already present rather than
+  displace something better.
+
+### Where they have been tested
+
+Both run self tests on an emulated ST under Hatari, and the keyboard
+driver is additionally exercised end to end: installed resident from
+`AUTO`, then read by a separate program through the cookie jar.
+
+**Neither has been run on real hardware.** That is the distance between
+"passes its tests" and "works", and it is worth closing before trusting
+either one in anger.
+
+## Writing your own
+
+The shape is the same whatever the transport:
+
+```c
+static XPAD block;
+
+xpad_init(&block, pad_count, caps, "My provider 1.0", req_or_null);
+xpad_publish(&block);
+
+/* whenever your input source has something new */
+{
+    XPAD_PAD *pads = xpad_back(&block);
+
+    pads[0].type    = XPAD_TYPE_GAMEPAD;
+    pads[0].buttons = translate(whatever);
+
+    xpad_commit(&block);
+}
+```
+
+What the examples are really demonstrating, and what a driver of your
+own should copy:
+
+- **Always chain to the handler you displaced.** One that swallows
+  events breaks the desktop and every existing program. Both drivers do
+  this, and both self tests check for it explicitly.
+- **Keep the translation free of TOS headers**, in its own file, so it
+  can be tested on a host without an emulator. That is where the logic
+  worth getting wrong lives.
+- **Do not claim capabilities you do not honour.** `caps` is a promise
+  to consumers, not a description of ambition.
+- **Reach system variables below `$800` through `Supexec`.** The ST bus
+  errors on user mode access down there, which catches the cookie jar at
+  `$5a0` and vector surgery alike.
+- **Fill the whole pad, or set the unchanging fields once at startup.**
+  The back buffer holds what you wrote two commits ago, not zeroes.
+
+## The viewer
 
 `src/tools/xpadview.c` shows live state for whichever provider is
-installed, and doubles as the reference consumer: it is written exactly
-as this document describes, so it cannot drift from the advice. Run it
-with `-d` to publish a demo provider and watch the viewer work with no
-hardware at all.
+installed: one pad at a time, keys 1 to 4 to select. It is also the
+reference consumer, written exactly as this document describes, so the
+advice above cannot drift away from something that compiles.
+
+Run it with `-d` and it publishes a demo provider first, so it works
+with no hardware and nothing else installed. `-1` prints one frame as
+plain text and exits, which is what makes it testable without a person
+watching.
+
+Its limits: the live display has only been checked in an emulator at 80
+columns, so the 40 column layout that low resolution gives you is
+unverified, and buttons are labelled by position rather than by the
+letters printed on a pad, deliberately. See the X/Y trap above.
 
 ## Integrating into a port
 

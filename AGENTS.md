@@ -20,8 +20,8 @@ covers working practices.
 ```
 src/xpad.h          the ABI: struct layout, button bitmask, declarations
 src/xpad.c          reference implementation, consumer and provider helpers
-src/drivers/joystick  joyvec provider: joystick 1 as one pad
-src/drivers/keyboard  kbdvec provider: DOOM controls as one pad
+src/drivers/joystick  example provider: joystick 1 as one pad
+src/drivers/keyboard  example provider: DOOM controls as one pad
 src/tools/xpadview.c  live viewer, and the reference consumer
 test/abi.c          ABI assertions, mostly static; host and ST builds
 test/mint/osbind.h  host stand-in for <mint/osbind.h>
@@ -34,6 +34,13 @@ LICENSE             BSD-2-Clause
 `src/xpad.h` and `src/xpad.c` are the only files a port copies. Everything
 under `src/drivers` and `src/tools` is a standalone program that links them,
 never something a consumer takes.
+
+**The drivers are examples first.** They exist so somebody writing a
+provider for their own transport has a complete, working one to copy,
+which means clarity beats cleverness every time, and every limitation
+gets written down rather than left to be discovered. README's "Example
+drivers" section is the list; keep it true. A new driver that is faster
+but harder to read is the wrong trade here.
 
 ## Building and testing
 

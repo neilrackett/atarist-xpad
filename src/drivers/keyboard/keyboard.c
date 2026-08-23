@@ -5,6 +5,12 @@
  * XPad keyboard driver: publishes the ST keyboard as a single pad,
  * using DOOM's default controls.
  *
+ * EXAMPLE DRIVER. Written to be read and copied as much as to be used.
+ * Its counterpart in drivers/joystick is smaller; this one additionally
+ * shows tracking held state across separate press and release events,
+ * and refusing to install where the machine cannot support it. See
+ * "Example drivers" in README for the full list of what it does not do.
+ *
  * Useful on a machine with no joystick at all, and as something to test
  * a consumer against when no controller is to hand.
  *
@@ -25,6 +31,9 @@
  *   - XPAD_TL2, XPAD_TR2, XPAD_MODE, XPAD_THUMBL and XPAD_THUMBR are
  *     unmapped: DOOM has no key that means them
  *   - seq advances when a mapped key changes, not per frame
+ *   - a keyboard is not a pad: keyboard matrices limit which
+ *     combinations of keys register together, so some multi-key holds a
+ *     game would expect from a controller will not all arrive
  */
 
 #include <mint/basepage.h>

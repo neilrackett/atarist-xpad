@@ -8,8 +8,13 @@
  *   XPADVIEW -d    publish a demo provider and view that
  *   XPADVIEW -1    print one frame as plain text and exit
  *
- * Written the way README tells a consumer to write one, so it doubles
- * as example code: find once, cache the pointer, read per frame.
+ * EXAMPLE CONSUMER, and the reference one: written exactly the way
+ * README tells a consumer to write one, so the advice there cannot
+ * drift away from something that compiles. Find once, cache the
+ * pointer, read per frame.
+ *
+ * The live display has only been checked at 80 columns, so the 40
+ * column layout low resolution gives you is unverified.
  *
  * Buttons are labelled by position, never by the letter printed on a
  * pad. See the X/Y trap in xpad.h for why that distinction matters.
