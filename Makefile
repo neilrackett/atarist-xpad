@@ -42,7 +42,7 @@ BUILD       = build
 # one a newcomer or a pre-commit hook can actually run.
 .DEFAULT_GOAL := test
 
-.PHONY: all check test st hatari hatari-joystick drivers clean
+.PHONY: all check test st hatari hatari-joystick hatari-keyboard drivers clean
 
 all: check test
 
@@ -65,6 +65,9 @@ test: | $(BUILD)
 	@echo
 	$(HOSTCC) $(HOSTCFLAGS) test/joystick.c -o $(BUILD)/joy
 	@$(BUILD)/joy
+	@echo
+	$(HOSTCC) $(HOSTCFLAGS) test/keyboard.c -o $(BUILD)/key
+	@$(BUILD)/key
 
 # The ST build of the harness. No -Itest here: it must pick up the real
 # <mint/osbind.h> and the real cookie jar at 0x5A0, not the host stubs.
@@ -86,12 +89,23 @@ $(BUILD)/XPADJOY.PRG: $(JOYDEP) | $(BUILD)
 $(BUILD)/JOYTEST.TOS: $(JOYDEP) | $(BUILD)
 	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(JOYSRC) -o $@
 
-drivers: $(BUILD)/XPADJOY.PRG
-	@echo "built $(BUILD)/XPADJOY.PRG"
+KEYDIR = $(DRIVERS)/keyboard
+KEYSRC = $(KEYDIR)/keyboard.c $(KEYDIR)/kbdvec.s $(SRC)/xpad.c
+KEYDEP = $(KEYSRC) $(KEYDIR)/keymap.h $(SRC)/xpad.h
 
-st: $(BUILD)/ABI.TOS $(BUILD)/XPADJOY.PRG $(BUILD)/JOYTEST.TOS
+$(BUILD)/XPADKEY.PRG: $(KEYDEP) | $(BUILD)
+	$(CC) $(CFLAGS) $(KEYSRC) -o $@
+
+$(BUILD)/KEYTEST.TOS: $(KEYDEP) | $(BUILD)
+	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(KEYSRC) -o $@
+
+drivers: $(BUILD)/XPADJOY.PRG $(BUILD)/XPADKEY.PRG
+	@echo "built $(BUILD)/XPADJOY.PRG and $(BUILD)/XPADKEY.PRG"
+
+st: $(BUILD)/ABI.TOS $(BUILD)/XPADJOY.PRG $(BUILD)/JOYTEST.TOS \
+    $(BUILD)/XPADKEY.PRG $(BUILD)/KEYTEST.TOS
 	@echo "built everything that runs on an ST into $(BUILD)"
-	@echo "run: make hatari / make hatari-joystick"
+	@echo "run: make hatari / hatari-joystick / hatari-keyboard"
 
 # Runs on the host, not in the container, since that is where Hatari is.
 hatari:
@@ -103,6 +117,11 @@ hatari:
 hatari-joystick:
 	@test -f $(BUILD)/JOYTEST.TOS || { echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
 	@python3 test/run-hatari.py $(BUILD)/JOYTEST.TOS
+
+# The keyboard driver's self test, likewise.
+hatari-keyboard:
+	@test -f $(BUILD)/KEYTEST.TOS || { echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
+	@python3 test/run-hatari.py $(BUILD)/KEYTEST.TOS
 
 $(BUILD):
 	@mkdir -p $(BUILD)

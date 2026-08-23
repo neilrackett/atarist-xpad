@@ -222,10 +222,18 @@ this order:
 A shim that publishes an `XPAD` block populated from steps 2 to 4 lets a
 port implement only step 1 and get the rest for nothing.
 
-`src/drivers/joystick` is the first of these: a resident driver that
-hooks `joyvec` and publishes joystick 1 as a single pad, four directions
-and one button. That is everything the IKBD reports for a port, so it is
-the floor the ladder above rests on, and it works on any ST ever made.
+Two of these exist:
+
+- `src/drivers/joystick` hooks `joyvec` and publishes joystick 1 as one
+  pad: four directions and one button, which is everything the IKBD
+  reports for a port. It works on any ST ever made, so it is the floor
+  the ladder above rests on.
+- `src/drivers/keyboard` hooks `kbdvec` and publishes the keyboard as
+  one pad, using DOOM's default controls. It needs TOS 2.0 or later,
+  because older TOS cannot report key releases.
+
+Both chain to the handler they displace, so an existing joystick and the
+keyboard carry on working normally.
 
 ## Integrating into a port
 

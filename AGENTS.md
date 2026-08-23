@@ -21,6 +21,7 @@ covers working practices.
 src/xpad.h          the ABI: struct layout, button bitmask, declarations
 src/xpad.c          reference implementation, consumer and provider helpers
 src/drivers/joystick  joyvec provider: joystick 1 as one pad
+src/drivers/keyboard  kbdvec provider: DOOM controls as one pad
 src/tools/          standalone programs, eg the diagnostic viewer
 test/abi.c          ABI assertions, mostly static; host and ST builds
 test/mint/osbind.h  host stand-in for <mint/osbind.h>
@@ -45,6 +46,7 @@ STCMD_NO_TTY=1 stcmd make check    compile for the ST, warnings fatal
 STCMD_NO_TTY=1 stcmd make st       link everything that runs on an ST
 make hatari                        ABI assertions on an emulated ST
 make hatari-joystick               joystick driver self test
+make hatari-keyboard               keyboard driver self test
 ```
 
 `test` is the default goal and needs nothing but a host compiler, so run
@@ -142,16 +144,22 @@ Listed so they do not get helpfully undone:
 - `xpad_req()` is the only supported route to the request area, which is
   the sole direction a consumer can corrupt a provider. Do not encourage
   reading `XPAD.req` directly.
-- The joystick driver hooks `joyvec` and needs no periodic hook at all,
-  because the IKBD calls it whenever the stick changes. Where a driver
-  does need one, prefer ETV (`$400`) over VBL (`$70`): VBL is far more
-  likely to be clobbered by an existing game.
+- Neither driver needs a periodic hook: `joyvec` and `kbdvec` are both
+  called for us when something changes. Where a driver does need one,
+  prefer ETV (`$400`) over VBL (`$70`): VBL is far more likely to be
+  clobbered by an existing game.
+- The keyboard driver needs TOS 2.0 or later and refuses below it. Key
+  releases only reach `kbdvec`, four bytes below `Kbdvbase()`, which
+  older TOS lacks; getting them from TOS 1.x means driving the ACIA
+  through `ikbdsys`, where reading the data register destroys the status
+  bits, so a driver cannot both see a byte and let TOS have it. EmuTOS
+  reports 2.06, so the emulator does not warn you about this.
 - A driver must always chain to the handler it displaced. One that
   swallows packets breaks the desktop and every existing game, so the
   joystick self test checks for it explicitly.
 - **System variables below `$800` need `Supexec`.** The ST bus errors on
-  user mode access down there, which is why the cookie jar at `$5a0` and
-  vector surgery both go through it.
+  user mode access down there, which is why reading `_sysbase` at `$4f2`
+  and the cookie jar at `$5a0` both go through it.
 - `xpad_fold_stick()` uses a radial deadzone, three word multiplies,
   which is acceptable at VBL rate. Do not "optimise" it into a box test:
   a box test rejects diagonals whose magnitude clears the threshold, so
