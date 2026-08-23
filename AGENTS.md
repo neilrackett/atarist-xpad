@@ -22,7 +22,7 @@ src/xpad.h          the ABI: struct layout, button bitmask, declarations
 src/xpad.c          reference implementation, consumer and provider helpers
 src/drivers/joystick  joyvec provider: joystick 1 as one pad
 src/drivers/keyboard  kbdvec provider: DOOM controls as one pad
-src/tools/          standalone programs, eg the diagnostic viewer
+src/tools/xpadview.c  live viewer, and the reference consumer
 test/abi.c          ABI assertions, mostly static; host and ST builds
 test/mint/osbind.h  host stand-in for <mint/osbind.h>
 test/run-hatari.py  boots an ST program under Hatari, relays its output
@@ -47,7 +47,13 @@ STCMD_NO_TTY=1 stcmd make st       link everything that runs on an ST
 make hatari                        ABI assertions on an emulated ST
 make hatari-joystick               joystick driver self test
 make hatari-keyboard               keyboard driver self test
+make hatari-view                   viewer against its demo provider
+make hatari-integration            driver from AUTO, viewer reads it
 ```
+
+`hatari-integration` is the only test where provider and consumer are
+separate processes, so it is the one that proves residency, the cookie
+and the consumer path together. Prefer breaking it over letting it rot.
 
 `test` is the default goal and needs nothing but a host compiler, so run
 it on every change. `check` builds `src/xpad.c` with `m68k-atari-mint-gcc`
@@ -154,12 +160,12 @@ Listed so they do not get helpfully undone:
   through `ikbdsys`, where reading the data register destroys the status
   bits, so a driver cannot both see a byte and let TOS have it. EmuTOS
   reports 2.06, so the emulator does not warn you about this.
+- **System variables below `$800` need `Supexec`.** The ST bus errors on
+  user mode access down there, which is why reading `_sysbase` at
+  `$4f2` and the cookie jar at `$5a0` both go through it.
 - A driver must always chain to the handler it displaced. One that
   swallows packets breaks the desktop and every existing game, so the
   joystick self test checks for it explicitly.
-- **System variables below `$800` need `Supexec`.** The ST bus errors on
-  user mode access down there, which is why reading `_sysbase` at `$4f2`
-  and the cookie jar at `$5a0` both go through it.
 - `xpad_fold_stick()` uses a radial deadzone, three word multiplies,
   which is acceptable at VBL rate. Do not "optimise" it into a box test:
   a box test rejects diagonals whose magnitude clears the threshold, so

@@ -42,7 +42,7 @@ BUILD       = build
 # one a newcomer or a pre-commit hook can actually run.
 .DEFAULT_GOAL := test
 
-.PHONY: all check test st hatari hatari-joystick hatari-keyboard drivers clean
+.PHONY: all check test st hatari hatari-joystick hatari-keyboard hatari-view hatari-integration drivers tools clean
 
 all: check test
 
@@ -99,17 +99,32 @@ $(BUILD)/XPADKEY.PRG: $(KEYDEP) | $(BUILD)
 $(BUILD)/KEYTEST.TOS: $(KEYDEP) | $(BUILD)
 	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(KEYSRC) -o $@
 
+# Standalone programs that link the core but are not part of it.
+TOOLS  = $(SRC)/tools
+VIEWSRC = $(TOOLS)/xpadview.c $(SRC)/xpad.c
+VIEWDEP = $(VIEWSRC) $(SRC)/xpad.h
+
+$(BUILD)/XPADVIEW.PRG: $(VIEWDEP) | $(BUILD)
+	$(CC) $(CFLAGS) $(VIEWSRC) -o $@
+
+$(BUILD)/VIEWTEST.TOS: $(VIEWDEP) | $(BUILD)
+	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(VIEWSRC) -o $@
+
+tools: $(BUILD)/XPADVIEW.PRG
+	@echo "built $(BUILD)/XPADVIEW.PRG"
+
 drivers: $(BUILD)/XPADJOY.PRG $(BUILD)/XPADKEY.PRG
 	@echo "built $(BUILD)/XPADJOY.PRG and $(BUILD)/XPADKEY.PRG"
 
 st: $(BUILD)/ABI.TOS $(BUILD)/XPADJOY.PRG $(BUILD)/JOYTEST.TOS \
-    $(BUILD)/XPADKEY.PRG $(BUILD)/KEYTEST.TOS
+    $(BUILD)/XPADKEY.PRG $(BUILD)/KEYTEST.TOS \
+    $(BUILD)/XPADVIEW.PRG $(BUILD)/VIEWTEST.TOS
 	@echo "built everything that runs on an ST into $(BUILD)"
-	@echo "run: make hatari / hatari-joystick / hatari-keyboard"
+	@echo "run: make hatari / hatari-joystick / hatari-keyboard / hatari-view"
 
 # Runs on the host, not in the container, since that is where Hatari is.
 hatari:
-	@test -f $(BUILD)/ABI.TOS || { 	    echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
+	@test -f $(BUILD)/ABI.TOS || { echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
 	@python3 test/run-hatari.py $(BUILD)/ABI.TOS
 
 # The joystick driver's self test on an emulated ST: it drives the real
@@ -122,6 +137,19 @@ hatari-joystick:
 hatari-keyboard:
 	@test -f $(BUILD)/KEYTEST.TOS || { echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
 	@python3 test/run-hatari.py $(BUILD)/KEYTEST.TOS
+
+# The viewer against its own demo provider: publishes a block, finds it
+# through the cookie, reads it back and prints one frame.
+hatari-view:
+	@test -f $(BUILD)/VIEWTEST.TOS || { echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
+	@python3 test/run-hatari.py $(BUILD)/VIEWTEST.TOS
+
+# End to end: a driver installed from AUTO, then a separate program
+# finding it through the cookie jar and reading its pads. This is the
+# only test where provider and consumer are different processes.
+hatari-integration:
+	@test -f $(BUILD)/VIEWTEST.TOS || { echo "build it first: STCMD_NO_TTY=1 stcmd make st"; exit 1; }
+	@python3 test/run-hatari.py $(BUILD)/VIEWTEST.TOS $(BUILD)/XPADKEY.PRG
 
 $(BUILD):
 	@mkdir -p $(BUILD)

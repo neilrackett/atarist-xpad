@@ -69,10 +69,14 @@ def find_tos():
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: run-hatari.py <program.tos>")
+    if len(sys.argv) not in (2, 3):
+        sys.exit("usage: run-hatari.py <program.tos> [auto-program]")
 
     program = sys.argv[1]
+    # Optional second program, dropped in AUTO\ so EmuTOS runs it at boot.
+    # That is how a resident driver gets installed before the program
+    # under test looks for it.
+    auto_first = sys.argv[2] if len(sys.argv) > 2 else None
 
     if not os.path.isfile(program):
         sys.exit("no such program: %s\n"
@@ -93,6 +97,15 @@ def main():
         name = os.path.basename(program).upper()
         shutil.copy(program, os.path.join(drive_c, name))
 
+        if auto_first:
+            if not os.path.isfile(auto_first):
+                sys.exit("no such program: %s" % auto_first)
+            auto_dir = os.path.join(drive_c, "AUTO")
+            os.mkdir(auto_dir)
+            shutil.copy(auto_first,
+                        os.path.join(auto_dir,
+                                     os.path.basename(auto_first).upper()))
+
         cmd = [
             hatari,
             "--tos", tos,
@@ -112,6 +125,8 @@ def main():
 
         print("hatari: %s" % hatari)
         print("tos:    %s" % tos)
+        if auto_first:
+            print("auto:   %s" % os.path.basename(auto_first).upper())
         print("running %s\n" % name)
 
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,

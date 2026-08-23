@@ -233,7 +233,14 @@ Two of these exist:
   because older TOS cannot report key releases.
 
 Both chain to the handler they displace, so an existing joystick and the
-keyboard carry on working normally.
+keyboard carry on working normally. Step 2 of the ladder, the STE
+enhanced ports, is still to write.
+
+`src/tools/xpadview.c` shows live state for whichever provider is
+installed, and doubles as the reference consumer: it is written exactly
+as this document describes, so it cannot drift from the advice. Run it
+with `-d` to publish a demo provider and watch the viewer work with no
+hardware at all.
 
 ## Integrating into a port
 
