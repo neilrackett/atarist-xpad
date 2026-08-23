@@ -7,17 +7,18 @@
 # reference implementation still compiles for the ST, and to run the ABI
 # assertions on the host.
 #
-#   make                               host ABI assertions, no toolchain
+# ./verify.sh runs every test there is. It has to be a script rather
+# than a target because the ST builds need the container and Hatari must
+# not run inside it. The individual targets, when you want just one:
+#
+#   make                               host tests, no toolchain
 #   STCMD_NO_TTY=1 stcmd make check    compile for the ST, warnings fatal
-#   STCMD_NO_TTY=1 stcmd make all      both
-#
-# The same assertions can also run on an emulated ST, which is the only
-# place the cookie jar meets supervisor mode and 32-bit pointers. That
-# takes two commands, because the build needs the container and the
-# emulator does not:
-#
-#   STCMD_NO_TTY=1 stcmd make st       link build/ABI.TOS
-#   make hatari                        run it under Hatari
+#   STCMD_NO_TTY=1 stcmd make st       link everything that runs on an ST
+#   make hatari                        ABI assertions on an emulated ST
+#   make hatari-joystick               joystick driver self test
+#   make hatari-keyboard               keyboard driver self test
+#   make hatari-view                   viewer against its demo provider
+#   make hatari-integration            drivers from AUTO, viewer reads them
 #
 
 # The warnings policy applies to both builds. Keep it in one place so

@@ -26,6 +26,7 @@ src/tools/xpadview.c  live viewer, and the reference consumer
 test/abi.c          ABI assertions, mostly static; host and ST builds
 test/mint/osbind.h  host stand-in for <mint/osbind.h>
 test/run-hatari.py  boots an ST program under Hatari, relays its output
+verify.sh           runs every test, across both toolchains
 Makefile            test, check, st and hatari targets
 README.md           the specification
 LICENSE             BSD-2-Clause
@@ -48,6 +49,14 @@ There are two targets, and the harness is already written: do not
 improvise a throwaway one.
 
 ```
+./verify.sh                        everything, in the right place
+```
+
+That is the one to run before saying a change works. It straddles the
+two toolchains, and it reports every step that failed rather than
+stopping at the first. The individual targets, when you want one:
+
+```
 make                               host tests, no toolchain
 STCMD_NO_TTY=1 stcmd make check    compile for the ST, warnings fatal
 STCMD_NO_TTY=1 stcmd make st       link everything that runs on an ST
@@ -57,6 +66,11 @@ make hatari-keyboard               keyboard driver self test
 make hatari-view                   viewer against its demo provider
 make hatari-integration            driver from AUTO, viewer reads it
 ```
+
+There is deliberately no `make` target that runs the lot: `st` needs the
+container and Hatari must not run inside it, so the two halves are
+straddled by a script instead, the way md-sidepad's `build.sh` does it.
+`verify.sh` refuses to run under `stcmd` for that reason.
 
 `hatari-integration` is the only test where provider and consumer are
 separate processes, so it is the one that proves residency, the cookie
