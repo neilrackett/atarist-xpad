@@ -3,7 +3,7 @@
 
 # Xpad for Atari ST
 
-Extended controller input for the Atari ST family,
+Open standard for extended controller input for the Atari ST family,
 by [Neil Rackett](https://neilrackett.com/atarist)
 
 ## Introduction
