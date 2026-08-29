@@ -163,6 +163,81 @@ of the array unused. `XPAD_PAD_AT()` and `xpad_back()` both derive that
 stride, which is what keeps provider and consumer from disagreeing about
 where buffer 1 begins.
 
+Three details a reimplementation needs, which the C expresses only by
+doing them:
+
+- **The initial sample order is free.** Read `seq` then `active`, or
+  `active` then `seq`, whichever suits your registers. The recheck
+  covers both, so neither order can accept a torn copy. `xpad.c` samples
+  `active` first; that is not normative.
+- **Recheck both**, not just `seq`. Rechecking one leaves the other free
+  to have moved.
+- **Retrying is optional.** `xpad_read()` tries three times because a
+  caller asking for a snapshot has no next frame to fall back on. A
+  consumer polling every frame may simply drop a torn read and keep the
+  previous one: the next sample is a frame away, and a retry loop costs
+  worst-case time in exactly the place that can least afford it. Both
+  are conforming.
+
+`active` is **0 or 1, and a provider must write nothing else**. That is
+a promise consumers may rely on, not just a description of current
+providers: it means a branch on zero and a mask by one reach the same
+buffer, so implementations in different languages agree. (`xpad.c`
+masks defensively; skipping the mask is still conforming.)
+
+## What a block promises for its lifetime
+
+`pads_offset`, `pad_size` and `pad_count` are **immutable for the life
+of a published block**. A provider may not re-lay-out a block that is
+already in the jar; a layout change means publishing a new one.
+
+That matters most to consumers on a per-frame budget: it means a pad's
+address can be computed once, at discovery, and used forever after. In
+assembly that turns the per-frame read into a load and a branch with no
+multiply at all, which is strictly better than evaluating
+`XPAD_PAD_AT()` every frame. The C macro's careful 16-bit arithmetic
+exists to avoid a `__mulsi3` libcall; assembly never had that problem
+and should just precompute.
+
+`XPAD_CAP_HOTPLUG` says a pad's **type** may change at runtime. It does
+not license the layout to change.
+
+The cookie's value is stable for the session too, so a consumer may
+cache the block pointer from discovery. A provider going away sets pad
+types to `XPAD_TYPE_NONE`; it does not free the block or clear the
+cookie out from under a consumer holding a pointer.
+
+## Consuming from assembly
+
+`src/xpad.inc` (vasm/devpac) and `src/xpad_gas.inc` (GNU as) carry the
+offsets and constants as equates. Both are **generated from `xpad.h`**
+by `make inc`, and `make test` fails if they drift, so nothing is
+transcribed by eye.
+
+They deliberately stop at `XPAD_HDR_FIXED`. Everything past it holds
+pointers, and nothing an assembly consumer needs lives there: the three
+fields that locate pads are all inside the fixed 18 bytes.
+
+`examples/asm/xpadread.s` is a worked consumer: the jar walk, the
+precompute, and the consistent read, with the reasoning written down.
+`make check` assembles it, so it cannot rot into a comment that merely
+looks like code.
+
+There are deliberately **no callable assembly routines**. A consumer
+with hard register constraints, which describes most reasons to be
+writing assembly at all, is better served by constants and a recipe
+than by a subroutine with a calling convention it has to work around.
+
+Two things worth knowing before you start:
+
+- **Check alignment before the first dereference.** A 68000 bus errors
+  on a word read from an odd address, and a consumer polling from a VBL
+  handler has nowhere to recover to. `xpad_valid()` now tests this, and
+  the example does the same `btst #0` on the cookie value.
+- **Supervisor already?** Then skip `xpad_find()`, which wraps itself in
+  `Supexec`, and walk the jar directly. If you are probing for other
+  cookies as well, walk it once and test each tag as you pass.
+
 ## Conventions
 
 Axes are signed `-127..127`, screen oriented: `+x` right, `+y` down.
@@ -368,10 +443,20 @@ letters printed on a pad, deliberately. See the X/Y trap above.
 
 ## Integrating into a port
 
-Copy `src/xpad.h` and `src/xpad.c` into the port. If you are writing a
-provider rather than consuming one, take `src/xpad_provider.c` too:
-`xpad.c` is the consumer half, and `xpad_provider.c` adds the helpers
-for owning and publishing a block.
+**Add this repository as a submodule**, and compile the two or three
+files you need straight out of it:
+
+```
+git submodule add https://github.com/neilrackett/atarist-xpad lib/xpad
+```
+
+Then build `lib/xpad/src/xpad.c` alongside your own sources, with
+`-Ilib/xpad/src`. A consumer needs `xpad.h` and `xpad.c`. A provider
+takes `xpad_provider.c` as well: `xpad.c` is the consumer half, and
+`xpad_provider.c` adds the helpers for owning and publishing a block.
+An assembly consumer wants `xpad.inc` or `xpad_gas.inc` instead, which
+are generated from the header and would be the third and fourth things
+to keep in sync by hand.
 
 The split is there because there is no section garbage collection on
 `m68k-atari-mint`, so the linker's unit is the object file. A game that
@@ -379,9 +464,35 @@ linked one file with both halves in it would carry the provider helpers
 into every binary without ever calling them: 684 bytes against 1252,
 measured, which is real money on a 512K machine.
 
-At around 500 lines they are not worth a submodule, particularly inside
-a Docker cross-compilation build. `XPAD_VERSION` makes drift visible if
-it ever matters.
+This README used to say that at around 500 lines these files were not
+worth a submodule. That was true when the ABI was settled and there
+were two files; it stopped being true. A submodule pins an exact commit,
+makes an update a deliberate act with a diff to read, and keeps the
+generated assembler equates matching the header they came from. Copies
+drift silently, and a consumer holding a stale `xpad.h` gets a struct
+layout that still compiles.
+
+Vendoring is still reasonable for a port that is frozen, or one whose
+build genuinely cannot take a submodule. If you do copy, record the
+commit you copied in your own README, and treat `XPAD_VERSION` as the
+thing to check when something behaves oddly.
+
+**One trap if you cross-compile through `atarist-toolkit-docker`.**
+`stcmd` runs `docker run -v ${ST_WORKING_FOLDER}:/tmp`, mounting that
+one directory and nothing else, and `ST_WORKING_FOLDER` defaults to the
+current directory. Put the submodule inside whatever gets mounted and
+everything works; put it above, which is what happens when the ST build
+lives in a subdirectory like `target/atarist` and that is the working
+folder, and the compiler cannot see it at all. No `-I` reaches outside
+the mount.
+
+Two ways out. Either mount the repository root, which is what
+atarist-stdl and pico-compad do and why neither hit this; or keep the
+submodule as the source of truth and have the build copy what it needs
+into the mounted directory as a generated artifact. The second is right
+for a project whose ST target is one of several: MD/Lynx does that for
+`xpad.inc` while its RP2040 half includes `xpad.h` from the submodule
+directly.
 
 Because the licence is BSD-2-Clause, a port that ships a binary must
 reproduce the copyright notice in its accompanying documentation. One

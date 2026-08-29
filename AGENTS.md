@@ -19,6 +19,10 @@ covers working practices.
 
 ```
 src/xpad.h          the ABI: struct layout, button bitmask, declarations
+src/xpad.inc        assembler equates, vasm/devpac dialect: GENERATED
+src/xpad_gas.inc    the same for GNU as: GENERATED, do not hand edit
+src/tools/geninc.c  generates both from xpad.h; `make inc`
+examples/asm/       a worked assembly consumer, assembled by `make check`
 src/xpad.c          consumer half: find a block and read it
 src/xpad_provider.c provider half: own a block and publish it
 src/drivers/joystick  example provider: both joystick ports as two pads
@@ -158,6 +162,24 @@ them without an explicit instruction and a major version bump.
   be `XPAD_MAX_PADS`.
 - **Version policy** is in README's Forward compatibility section. Do not
   bump the major version without being asked to.
+- **`active` is 0 or 1 and providers must write nothing else.** This is
+  now promised to consumers, not merely true of current providers, so
+  that a branch on zero and a mask by one reach the same buffer. An
+  assembly consumer branches; `xpad.c` masks defensively. Do not make
+  the promise weaker.
+- **`pads_offset`, `pad_size` and `pad_count` are immutable for the life
+  of a published block.** Consumers precompute pad addresses from them
+  at discovery, so a provider that re-lays-out a live block silently
+  breaks every one of them. A layout change means a new block.
+- **`stcmd` mounts one directory.** `docker run -v
+  ${ST_WORKING_FOLDER}:/tmp`, defaulting to the current directory, so a
+  submodule above the mount is invisible to the cross compiler and no
+  `-I` will reach it. This repo builds from its own root so it never
+  bites here, but it bites consumers whose ST build lives in a
+  subdirectory, and README's integration section now warns about it.
+- **The assembler equates are generated.** Never hand edit `src/*.inc`;
+  change `xpad.h` and run `make inc`. `make test` diffs them and fails
+  if they are stale, which is the only way they can now go wrong.
 
 ## The X/Y trap
 
@@ -192,6 +214,15 @@ Listed so they do not get helpfully undone:
 - D-pad bits sit at 0 to 3 rather than mirroring the kernel's
   `BTN_DPAD_*` range, because ST software reads directions constantly.
 - Axes are 8-bit. 16-bit resolution is pointless on this hardware.
+- New buttons go at bit 17 and up, which keeps everything an ordinary
+  pad needs inside the low 16 bits. That is worth preserving: a
+  transport tunnelling the mask through a byte-oriented channel often
+  carries only bits 0..15, and MD/Lynx already drops bit 16 for exactly
+  that reason.
+- `xpad_valid()` rejects an odd pointer before its first dereference. A
+  68000 bus errors on a word read from an odd address and a consumer
+  polling from a VBL handler cannot recover, so a garbage cookie value
+  has to fail the gate rather than take the machine down.
 - `xpad_read()` copies rather than returning a pointer, so the caller
   holds a stable snapshot for a whole frame.
 - The retry loop is three attempts. Two buffers plus a `seq` recheck

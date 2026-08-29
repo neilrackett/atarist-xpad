@@ -387,6 +387,28 @@ static void check_valid(void)
     check(ok, "xpad_init always produces a block xpad_valid accepts");
     check(xpad_valid(0) == 0, "xpad_valid rejects NULL");
 
+    /*
+     * An odd pointer must be refused before the first dereference. A
+     * 68000 bus errors on a word read from an odd address, and a
+     * consumer polling from a VBL handler has nowhere to recover to, so
+     * a garbage cookie value has to fail the gate rather than take the
+     * machine down. Reported by an assembly consumer that had to add
+     * the same test by hand.
+     */
+    {
+        static struct
+        {
+            uint8_t pad;
+            XPAD block;
+        } skewed;
+        const XPAD *odd;
+
+        skewed.block = x;
+        odd = (const XPAD *)((const uint8_t *)&skewed.block + 1);
+
+        check(xpad_valid(odd) == 0, "xpad_valid rejects an odd pointer");
+    }
+
     xpad_init(&x, XPAD_MAX_PADS, 0, "test", 0);
     x.magic = 0;
     check(xpad_valid(&x) == 0, "xpad_valid rejects a bad magic");

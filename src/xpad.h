@@ -31,6 +31,13 @@ extern "C"
     /* Identification                                                      */
     /* ------------------------------------------------------------------ */
 
+/*
+ * Two constants, deliberately, even though they hold the same value:
+ * the jar tag a discovery walk matches, and the sentinel inside the
+ * block that says a pointer really leads to an XPAD. Match each with
+ * its own name. They are not promised to stay equal, and code that
+ * assumes it has baked in a coincidence the spec never offered.
+ */
 #define XPAD_COOKIE 0x58504144UL /* 'XPAD' cookie jar id        */
 #define XPAD_MAGIC 0x58504144UL  /* 'XPAD' in XPAD.magic        */
 
@@ -81,6 +88,16 @@ extern "C"
 
 #define XPAD_THUMBL 0x00008000UL /* left stick click          */
 #define XPAD_THUMBR 0x00010000UL /* right stick click         */
+
+/*
+ * Bit 16 is the first that does not fit in a word. That is not an
+ * accident worth spending: a transport tunnelling the mask through a
+ * byte-oriented channel often carries only bits 0..15, and everything
+ * an ordinary pad needs (directions, four face buttons, both
+ * shoulders, Select, Start, Mode) is below it. New buttons go at bit
+ * 17 and up, so they stay cheap for C consumers and remain the ones a
+ * narrow transport may drop.
+ */
 
     /* bits 17..31 reserved, must be zero */
 
@@ -201,6 +218,27 @@ extern "C"
      * seq is bumped before active flips, which is what makes the
      * consumer's recheck meaningful.
      *
+     * A provider MUST write only 0 or 1 to active. That is a promise to
+     * consumers, not merely a description: an assembly consumer is
+     * entitled to branch on zero/non-zero and reach the same buffer this
+     * header's C reaches. (The C masks with & 1 as belt and braces
+     * against a broken provider; the mask is defensive, not semantic,
+     * and a consumer that skips it is still conforming.)
+     *
+     * pads_offset, pad_size and pad_count are IMMUTABLE for the life of
+     * a published block. A provider may not re-lay-out a block that is
+     * already in the jar; a layout change means a new block. Consumers
+     * may therefore compute a pad's address once, at discovery, and use
+     * it for the life of the block, which is what an assembly consumer
+     * on a per-frame budget will want to do. XPAD_CAP_HOTPLUG allows a
+     * pad's type to change at runtime; it does not allow the layout to.
+     *
+     * The cookie's value is likewise stable for the session: a provider
+     * publishes one block and does not repoint the cookie at another, so
+     * a consumer may cache the pointer from discovery. A provider going
+     * away sets pad types to XPAD_TYPE_NONE rather than freeing the
+     * block or clearing the cookie.
+     *
      * The two buffers sit pad_count * pad_size apart, not XPAD_MAX_PADS
      * apart, so a block reporting fewer pads than the maximum leaves the
      * tail of the declared array unused. XPAD_PAD_AT() and xpad_back()
@@ -222,7 +260,7 @@ extern "C"
         uint16_t caps;        /* XPAD_CAP_*                        */
         uint16_t seq;         /* incremented on every commit       */
         uint8_t pad_count;    /* slots present, 1..XPAD_MAX_PADS   */
-        uint8_t active;       /* front buffer index, 0 or 1        */
+        uint8_t active;       /* front buffer index, 0 or 1 ONLY   */
         const char *provider; /* NUL terminated, eg "MD/Sidepad 1.1" */
         XPAD_REQ *req;        /* NULL when unsupported             */
         XPAD_PAD pads[2][XPAD_MAX_PADS];

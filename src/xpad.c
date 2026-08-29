@@ -14,6 +14,7 @@
  */
 
 #include <mint/osbind.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "xpad.h"
@@ -64,7 +65,18 @@ int xpad_valid(const XPAD *x)
 {
     uint32_t span;
 
-    if (!x || x->magic != XPAD_MAGIC)
+    if (!x)
+        return 0;
+
+    /* Alignment before the first dereference. A 68000 bus errors on a
+     * word read from an odd address, and a consumer polling from a VBL
+     * handler has nowhere to recover to, so a garbage cookie value must
+     * fail here rather than take the machine down. Cheap: one bit test
+     * at discovery. */
+    if ((uintptr_t)x & 1)
+        return 0;
+
+    if (x->magic != XPAD_MAGIC)
         return 0;
 
     if ((x->version >> 8) != XPAD_VER_MAJOR)

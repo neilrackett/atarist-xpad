@@ -27,6 +27,8 @@
 WARNINGS    = -Wall -Wextra -Werror
 
 CC          = m68k-atari-mint-gcc
+AS          = m68k-atari-mint-as
+VASM        = vasmm68k_mot
 CFLAGS      = $(WARNINGS) -O2 -fomit-frame-pointer -m68000
 
 HOSTCC      = cc
@@ -39,12 +41,13 @@ HOSTCFLAGS  = $(WARNINGS) -O1 -std=c11 -Itest \
 SRC         = src
 DRIVERS     = $(SRC)/drivers
 BUILD       = build
+TOOLS       = $(SRC)/tools
 
 # test runs anywhere; check needs the cross toolchain. Default to the
 # one a newcomer or a pre-commit hook can actually run.
 .DEFAULT_GOAL := test
 
-.PHONY: all check test st hatari hatari-joystick hatari-keyboard hatari-view hatari-integration drivers tools clean
+.PHONY: all check test inc inc-check examples st hatari hatari-joystick hatari-keyboard hatari-view hatari-integration drivers tools clean
 
 all: check test
 
@@ -52,7 +55,23 @@ all: check test
 # there is no program here, only a translation unit that must be clean.
 # test/abi.c is syntax checked too, so the frozen layout is asserted for
 # the architecture the ABI is for and not only for the host.
-check: | $(BUILD)
+# The worked assembly consumer has to keep assembling, or it is just a
+# comment that looks like code. Uses the generated equates, so this also
+# proves those are usable by an assembler and not merely well formed.
+# Both dialects, because both are shipped and an unassembled example is
+# just a comment that looks like code. -x makes an unresolved symbol an
+# error, so this also proves every equate the example names exists.
+$(BUILD)/xpadread.o: examples/asm/xpadread.s $(SRC)/xpad_gas.inc | $(BUILD)
+	$(AS) -m68000 -I$(SRC) examples/asm/xpadread.s -o $@
+
+$(BUILD)/xpadread_devpac.o: examples/asm/xpadread_devpac.s $(SRC)/xpad.inc | $(BUILD)
+	$(VASM) -Faout -quiet -x -m68000 -devpac -I$(SRC) \
+	    examples/asm/xpadread_devpac.s -o $@
+
+examples: $(BUILD)/xpadread.o $(BUILD)/xpadread_devpac.o
+	@echo "both assembly examples assemble, in both dialects"
+
+check: examples | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/xpad.c -o $(BUILD)/xpad.o
 	$(CC) $(CFLAGS) -c $(SRC)/xpad_provider.c -o $(BUILD)/xpad_provider.o
 	$(CC) $(CFLAGS) -fsyntax-only test/abi.c
@@ -71,6 +90,30 @@ test: | $(BUILD)
 	@echo
 	$(HOSTCC) $(HOSTCFLAGS) test/keyboard.c -o $(BUILD)/key
 	@$(BUILD)/key
+	@echo
+	@$(MAKE) --no-print-directory inc-check
+
+# The assembler equates are generated from xpad.h, so they cannot be
+# transcribed wrongly; this catches them being left stale after the
+# header changes, which is the only way they can now go wrong.
+$(BUILD)/geninc: $(TOOLS)/geninc.c $(SRC)/xpad.h | $(BUILD)
+	$(HOSTCC) $(HOSTCFLAGS) $(TOOLS)/geninc.c -o $@
+
+inc: $(BUILD)/geninc
+	@$(BUILD)/geninc      > $(SRC)/xpad.inc
+	@$(BUILD)/geninc -gas > $(SRC)/xpad_gas.inc
+	@echo "regenerated $(SRC)/xpad.inc and $(SRC)/xpad_gas.inc"
+
+inc-check: $(BUILD)/geninc
+	@$(BUILD)/geninc      > $(BUILD)/xpad.inc.new
+	@$(BUILD)/geninc -gas > $(BUILD)/xpad_gas.inc.new
+	@if ! diff -q $(SRC)/xpad.inc $(BUILD)/xpad.inc.new >/dev/null || \
+	    ! diff -q $(SRC)/xpad_gas.inc $(BUILD)/xpad_gas.inc.new >/dev/null; then \
+		echo "the assembler equates are stale: run 'make inc'"; \
+		diff -u $(SRC)/xpad.inc $(BUILD)/xpad.inc.new | head -20; \
+		exit 1; \
+	fi
+	@echo "assembler equates match xpad.h"
 
 # The ST build of the harness. No -Itest here: it must pick up the real
 # <mint/osbind.h> and the real cookie jar at 0x5A0, not the host stubs.
@@ -105,7 +148,6 @@ $(BUILD)/KEYTEST.TOS: $(KEYDEP) | $(BUILD)
 	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(KEYSRC) -o $@
 
 # Standalone programs that link the core but are not part of it.
-TOOLS  = $(SRC)/tools
 VIEWSRC = $(TOOLS)/xpadview.c $(SRC)/xpad.c $(SRC)/xpad_provider.c
 VIEWDEP = $(VIEWSRC) $(SRC)/xpad.h
 
