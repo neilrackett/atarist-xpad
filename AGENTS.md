@@ -169,6 +169,22 @@ This is not a bug. Do not "fix" it. Use `XPAD_NORTH` / `XPAD_WEST` in new
 code, and when writing a provider that translates from Gamepad API index
 order, map by position and never by the letter on the button.
 
+## The viewer redraws only what changed
+
+`xpadview.c` keeps a `shown` struct of what is currently on the glass
+and emits only the cells that differ. This is not premature
+optimisation: a full-screen repaint is about 400 characters through the
+TOS console, measured at **6066 ms per frame** on an emulated ST, so a
+viewer that repaints unconditionally spends six seconds showing you
+state that arrived instantly. Targeted updates take the idle case to
+effectively zero and a keypress to a single positioned character, about
+3 ms.
+
+Keep it that way. Anything added to the live view needs a field in
+`shown` and a comparison, and `draw_invalidate()` must be called
+whenever something invalidates the whole layout: entry, and switching
+pad. The one-shot `-1` snapshot path is separate and unaffected.
+
 ## Deliberate decisions
 
 Listed so they do not get helpfully undone:

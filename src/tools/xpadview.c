@@ -232,86 +232,218 @@ static void explain_absence(void)
 /* Rendering                                                           */
 /* ------------------------------------------------------------------ */
 
+/*
+ * What the screen currently shows.
+ *
+ * Redrawing everything each frame costs about 400 characters through
+ * the TOS console, measured at 390ms a frame on an emulated ST: slow
+ * enough that the viewer, not the link, becomes the thing you are
+ * watching. A single positioned character costs 3ms. So keep a copy of
+ * what was drawn and emit only the cells that differ.
+ *
+ * `valid` is cleared to force a full repaint: on entry, and whenever
+ * the selected pad changes and everything below the header is stale.
+ */
+static struct
+{
+    int valid;
+    /* header */
+    unsigned rate;
+    uint16_t caps;
+    uint8_t active;
+    int sel;
+    int live[XPAD_MAX_PADS];
+    /* pad */
+    int present;
+    uint8_t type, flags;
+    uint32_t buttons;
+    int8_t lx, ly, rx, ry;
+    uint8_t lt, rt;
+} shown;
+
+static void draw_invalidate(void)
+{
+    shown.valid = 0;
+}
+
+/* One button's state cell. Buttons are three columns wide and the
+ * glyph sits in the last of them. */
+static void draw_button(unsigned i, uint32_t held)
+{
+    int row = (i < ROW_SPLIT) ? 8 : 10;
+    int col = (int)((i < ROW_SPLIT) ? i : i - ROW_SPLIT) * 3 + 2;
+
+    at(row, col);
+    put((held & buttons[i].bit) ? "*" : ".");
+}
+
 static void draw_header(const XPAD *x, int sel, unsigned rate)
 {
     int i;
 
-    at(0, 0);
-    printf("Xpad viewer            v%d.%d  %3u/s ",
-           x->version >> 8, x->version & 0xff, rate);
+    /* The static furniture: only ever drawn once. */
+    if (!shown.valid)
+    {
+        at(1, 0);
+        printf("%-32s", x->provider ? x->provider : "(unnamed)");
 
-    at(1, 0);
-    printf("%-32s", x->provider ? x->provider : "(unnamed)");
+        at(0, 0);
+        printf("Xpad viewer            v%d.%d       ",
+               x->version >> 8, x->version & 0xff);
+    }
 
-    at(2, 0);
-    put("caps ");
-    printf("%s%s%s%s      ",
-           (x->caps & XPAD_CAP_ANALOG) ? "ANALOG " : "",
-           (x->caps & XPAD_CAP_RUMBLE) ? "RUMBLE " : "",
-           (x->caps & XPAD_CAP_LED) ? "LED " : "",
-           (x->caps & XPAD_CAP_HOTPLUG) ? "HOTPLUG" : "");
+    if (!shown.valid || rate != shown.rate)
+    {
+        at(0, 30);
+        printf("%3u/s ", rate);
+        shown.rate = rate;
+    }
+
+    if (!shown.valid || x->caps != shown.caps)
+    {
+        at(2, 0);
+        put("caps ");
+        printf("%s%s%s%s      ",
+               (x->caps & XPAD_CAP_ANALOG) ? "ANALOG " : "",
+               (x->caps & XPAD_CAP_RUMBLE) ? "RUMBLE " : "",
+               (x->caps & XPAD_CAP_LED) ? "LED " : "",
+               (x->caps & XPAD_CAP_HOTPLUG) ? "HOTPLUG" : "");
+        shown.caps = x->caps;
+    }
 
     /* Which slots hold something, so nobody has to cycle all four to
      * find out whether a second controller was seen. */
-    at(3, 0);
-    put("pads ");
     for (i = 0; i < XPAD_MAX_PADS; i++)
     {
         XPAD_PAD pad;
         int live = i < x->pad_count && xpad_read(x, i, &pad) &&
                    pad.type != XPAD_TYPE_NONE;
 
+        if (shown.valid && live == shown.live[i] && sel == shown.sel)
+            continue;
+
+        at(3, 5 + i * 4);
         if (i == sel)
             printf("[%d]%c", i, live ? '*' : ' ');
         else
             printf(" %d %c", i, live ? '*' : ' ');
+        shown.live[i] = live;
     }
-    printf("  buf %d      ", x->active);
+
+    if (!shown.valid)
+    {
+        at(3, 0);
+        put("pads ");
+    }
+
+    if (!shown.valid || x->active != shown.active)
+    {
+        at(3, 5 + XPAD_MAX_PADS * 4);
+        printf("  buf %d      ", x->active);
+        shown.active = x->active;
+    }
+
+    shown.sel = sel;
 }
 
 static void draw_pad(const XPAD *x, int sel)
 {
     XPAD_PAD pad;
+    int present = xpad_read(x, sel, &pad);
+    int fresh = !shown.valid;
 
-    at(5, 0);
-
-    if (!xpad_read(x, sel, &pad))
+    if (!present)
     {
-        int row;
-
-        printf("Pad %d is not present.%-18s", sel, "");
-
-        for (row = 6; row <= 10; row++)
+        if (fresh || shown.present)
         {
-            at(row, 0);
-            printf("%-40s", "");
+            int row;
+
+            at(5, 0);
+            printf("Pad %d is not present.%-18s", sel, "");
+
+            for (row = 6; row <= 13; row++)
+            {
+                at(row, 0);
+                printf("%-40s", "");
+            }
+            shown.present = 0;
         }
         return;
     }
 
-    printf("Pad %d  %-12s %s%s%s     ", sel, type_name(pad.type),
-           (pad.flags & XPAD_PAD_ANALOG) ? "ANALOG " : "",
-           (pad.flags & XPAD_PAD_WIRELESS) ? "BT " : "",
-           (pad.flags & XPAD_PAD_LOWBATT) ? "LOWBATT" : "");
+    /* Coming back from "not present" means the rows below were blanked,
+     * so everything has to go down again. */
+    if (!shown.present)
+        fresh = 1;
 
-    at(6, 0);
-    printf("buttons %08lx", (unsigned long)pad.buttons);
+    if (fresh || pad.type != shown.type || pad.flags != shown.flags)
+    {
+        at(5, 0);
+        printf("Pad %d  %-12s %s%s%s     ", sel, type_name(pad.type),
+               (pad.flags & XPAD_PAD_ANALOG) ? "ANALOG " : "",
+               (pad.flags & XPAD_PAD_WIRELESS) ? "BT " : "",
+               (pad.flags & XPAD_PAD_LOWBATT) ? "LOWBATT" : "");
+        shown.type = pad.type;
+        shown.flags = pad.flags;
+    }
 
-    at(7, 0);
-    button_labels(0, ROW_SPLIT);
-    at(8, 0);
-    button_states(pad.buttons, 0, ROW_SPLIT);
+    /* The labels never change, so they are furniture too. */
+    if (fresh)
+    {
+        at(7, 0);
+        button_labels(0, ROW_SPLIT);
+        at(9, 0);
+        button_labels(ROW_SPLIT, BUTTON_COUNT);
+    }
 
-    at(9, 0);
-    button_labels(ROW_SPLIT, BUTTON_COUNT);
-    at(10, 0);
-    button_states(pad.buttons, ROW_SPLIT, BUTTON_COUNT);
+    if (fresh || pad.buttons != shown.buttons)
+    {
+        at(6, 0);
+        printf("buttons %08lx", (unsigned long)pad.buttons);
 
-    at(12, 0);
-    printf("stick L %+4d,%+4d   R %+4d,%+4d", pad.lx, pad.ly, pad.rx, pad.ry);
+        if (fresh)
+        {
+            /* A whole row in one write beats seventeen positioned
+             * ones, and this path only runs on entry or a pad switch. */
+            at(8, 0);
+            button_states(pad.buttons, 0, ROW_SPLIT);
+            at(10, 0);
+            button_states(pad.buttons, ROW_SPLIT, BUTTON_COUNT);
+        }
+        else
+        {
+            /* The point of the whole exercise: a keypress repaints one
+             * character, not the screen. */
+            uint32_t moved = pad.buttons ^ shown.buttons;
+            unsigned i;
 
-    at(13, 0);
-    printf("trig  L %3u  R %3u        ", pad.lt, pad.rt);
+            for (i = 0; i < BUTTON_COUNT; i++)
+                if (moved & buttons[i].bit)
+                    draw_button(i, pad.buttons);
+        }
+
+        shown.buttons = pad.buttons;
+    }
+
+    if (fresh || pad.lx != shown.lx || pad.ly != shown.ly ||
+        pad.rx != shown.rx || pad.ry != shown.ry)
+    {
+        at(12, 0);
+        printf("stick L %+4d,%+4d   R %+4d,%+4d",
+               pad.lx, pad.ly, pad.rx, pad.ry);
+        shown.lx = pad.lx; shown.ly = pad.ly;
+        shown.rx = pad.rx; shown.ry = pad.ry;
+    }
+
+    if (fresh || pad.lt != shown.lt || pad.rt != shown.rt)
+    {
+        at(13, 0);
+        printf("trig  L %3u  R %3u        ", pad.lt, pad.rt);
+        shown.lt = pad.lt;
+        shown.rt = pad.rt;
+    }
+
+    shown.present = 1;
 }
 
 static void snapshot(const XPAD *x, int sel)
@@ -350,6 +482,7 @@ static int view(const XPAD *x, int demo_mode)
 
     cls();
     cursor(0);
+    draw_invalidate(); /* nothing on the glass yet */
 
     at(23, 0);
     put("1-4 pad   Q quit");
@@ -361,6 +494,7 @@ static int view(const XPAD *x, int demo_mode)
 
         draw_header(x, sel, rate);
         draw_pad(x, sel);
+        shown.valid = 1;
 
         while (Bconstat(2))
         {
@@ -369,8 +503,13 @@ static int view(const XPAD *x, int demo_mode)
 
             if (c == 'q' || c == 'Q' || c == 27)
                 running = 0;
-            else if (c >= '1' && c <= '4')
+            else if (c >= '1' && c <= '4' && sel != c - '1')
+            {
+                /* Everything below the header now describes a
+                 * different pad, so repaint it. */
                 sel = c - '1';
+                draw_invalidate();
+            }
         }
 
         Vsync();
