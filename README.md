@@ -3,6 +3,8 @@
 
 # Xpad for Atari ST
 
+<img src="docs/xpad-logo.webp" alt="Xpad" width="640" />
+
 Open standard for extended controller input for the Atari ST family,
 by [Neil Rackett](https://neilrackett.com/atarist)
 
@@ -350,7 +352,7 @@ to the d-pad, Ctrl to fire, Space to use, Alt to strafe, Shift to run,
 comma and period to the shoulders, Tab to select and Esc to start.
 
 - **Needs TOS 2.0 or later**, and refuses to install below it. Knowing
-  which keys are *held* needs make and break codes, and only `kbdvec`,
+  which keys are _held_ needs make and break codes, and only `kbdvec`,
   four bytes below `Kbdvbase()`, carries releases. Older TOS has no such
   vector, and reaching them through `ikbdsys` does not work: reading the
   ACIA data register destroys the status bits, so a driver cannot both
