@@ -63,6 +63,15 @@ if step "link everything that runs on an ST" stcmd make st; then
     step "ABI assertions on an emulated ST" make hatari
     step "joystick driver self test" make hatari-joystick
     step "keyboard driver self test" make hatari-keyboard
+    step "STE joypad self test, on an STE" make hatari-stepad
+    # And on a plain ST, where the point is that it reads nothing at all
+    # rather than bus erroring in a timer interrupt.
+    step "STE joypad refuses on a plain ST" \
+        env MACHINE=st python3 test/run-hatari.py build/STETEST.TOS
+    # A Mega STE has the registers but no sockets, so the gate has to
+    # refuse it without a bus error to warn anyone.
+    step "STE joypad refuses on a Mega STE" \
+        env MACHINE=megaste python3 test/run-hatari.py build/STETEST.TOS
     step "viewer against its demo provider" make hatari-view
     step "drivers resident from AUTO, read by another process" \
         make hatari-integration

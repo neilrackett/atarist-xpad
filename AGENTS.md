@@ -27,10 +27,12 @@ src/xpad.c          consumer half: find a block and read it
 src/xpad_provider.c provider half: own a block and publish it
 src/drivers/joystick  example provider: both joystick ports as two pads
 src/drivers/keyboard  example provider: DOOM controls as one pad
+src/drivers/stepad    example provider: the STE's enhanced ports
 src/tools/xpadview.c  live viewer, and the reference consumer
 test/abi.c          ABI assertions, mostly static; host and ST builds
 test/joystick.c     IKBD translation tests, host only
 test/keyboard.c     keymap tests, host only
+test/stepad.c       STE matrix decode tests, host only
 test/mint/osbind.h  host stand-in for <mint/osbind.h>
 test/run-hatari.py  boots an ST program under Hatari, relays its output
 verify.sh           runs every test, across both toolchains
@@ -80,6 +82,7 @@ STCMD_NO_TTY=1 stcmd make st       link everything that runs on an ST
 make hatari                        ABI assertions on an emulated ST
 make hatari-joystick               joystick driver self test
 make hatari-keyboard               keyboard driver self test
+make hatari-stepad                 STE joypad self test, on an emulated STE
 make hatari-view                   viewer against its demo provider
 make hatari-integration            drivers from AUTO, viewer reads them
 ```
@@ -240,10 +243,22 @@ Listed so they do not get helpfully undone:
 - `xpad_req()` is the only supported route to the request area, which is
   the sole direction a consumer can corrupt a provider. Do not encourage
   reading `XPAD.req` directly.
-- Neither driver needs a periodic hook: `joyvec` and `kbdvec` are both
-  called for us when something changes. Where a driver does need one,
-  prefer ETV (`$400`) over VBL (`$70`): VBL is far more likely to be
-  clobbered by an existing game.
+- The joystick and keyboard drivers need no periodic hook: `joyvec` and
+  `kbdvec` are both called for us when something changes. The STE driver
+  does need one, because its ports are registers and nothing announces a
+  change, so it takes ETV (`$400`) rather than VBL (`$70`): VBL is far
+  more likely to be clobbered by an existing game.
+- The STE driver checks `_MCH` before it reads anything, because
+  `$FF9200` does not exist on a plain ST and a bus error inside a timer
+  interrupt takes the machine with it. It compares the **whole** cookie,
+  not the family: `00010000` is an STE and `00010010` is a Mega STE,
+  which has the registers but no sockets, so gating on the family alone
+  would install a provider that can never see a button. Both values were
+  read from EmuTOS under Hatari rather than taken from a table. Its self test drives the
+  trampoline through `Supexec` for the same family of reason: the row
+  select writes to the I/O area, which user mode cannot reach, so
+  calling it directly bus errors on the first write. Both are the rule
+  about system variables below `$800`, in a different place.
 - The keyboard driver needs TOS 2.0 or later and refuses below it. Key
   releases only reach `kbdvec`, four bytes below `Kbdvbase()`, which
   older TOS lacks; getting them from TOS 1.x means driving the ACIA

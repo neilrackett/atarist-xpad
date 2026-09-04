@@ -18,6 +18,7 @@
 #   make hatari                        ABI assertions on an emulated ST
 #   make hatari-joystick               joystick driver self test
 #   make hatari-keyboard               keyboard driver self test
+#   make hatari-stepad                 STE joypad driver self test
 #   make hatari-view                   viewer against its demo provider
 #   make hatari-integration            drivers from AUTO, viewer reads them
 #
@@ -47,7 +48,7 @@ TOOLS       = $(SRC)/tools
 # one a newcomer or a pre-commit hook can actually run.
 .DEFAULT_GOAL := test
 
-.PHONY: all check test inc inc-check examples st hatari hatari-joystick hatari-keyboard hatari-view hatari-integration drivers tools clean
+.PHONY: all check test inc inc-check examples st hatari hatari-joystick hatari-keyboard hatari-stepad hatari-view hatari-integration drivers tools clean
 
 all: check test
 
@@ -90,6 +91,9 @@ test: | $(BUILD)
 	@echo
 	$(HOSTCC) $(HOSTCFLAGS) test/keyboard.c -o $(BUILD)/key
 	@$(BUILD)/key
+	@echo
+	$(HOSTCC) $(HOSTCFLAGS) test/stepad.c -o $(BUILD)/stepad
+	@$(BUILD)/stepad
 	@echo
 	@$(MAKE) --no-print-directory inc-check
 
@@ -147,6 +151,19 @@ $(BUILD)/XPADKEY.PRG: $(KEYDEP) | $(BUILD)
 $(BUILD)/KEYTEST.TOS: $(KEYDEP) | $(BUILD)
 	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(KEYSRC) -o $@
 
+# The STE driver is the only one that polls, so it is the only one with
+# an ETV hook: nothing calls a driver when a joypad button changes.
+STEDIR = $(DRIVERS)/stepad
+STESRC = $(STEDIR)/stepad.c $(STEDIR)/etv.s $(SRC)/xpad.c \
+         $(SRC)/xpad_provider.c
+STEDEP = $(STESRC) $(STEDIR)/decode.h $(SRC)/xpad.h
+
+$(BUILD)/XPADSTE.PRG: $(STEDEP) | $(BUILD)
+	$(CC) $(CFLAGS) $(STESRC) -o $@
+
+$(BUILD)/STETEST.TOS: $(STEDEP) | $(BUILD)
+	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(STESRC) -o $@
+
 # Standalone programs that link the core but are not part of it.
 VIEWSRC = $(TOOLS)/xpadview.c $(SRC)/xpad.c $(SRC)/xpad_provider.c
 VIEWDEP = $(VIEWSRC) $(SRC)/xpad.h
@@ -160,14 +177,16 @@ $(BUILD)/VIEWTEST.TOS: $(VIEWDEP) | $(BUILD)
 tools: $(BUILD)/XPADVIEW.PRG
 	@echo "built $(BUILD)/XPADVIEW.PRG"
 
-drivers: $(BUILD)/XPADJOY.PRG $(BUILD)/XPADKEY.PRG
-	@echo "built $(BUILD)/XPADJOY.PRG and $(BUILD)/XPADKEY.PRG"
+drivers: $(BUILD)/XPADJOY.PRG $(BUILD)/XPADKEY.PRG $(BUILD)/XPADSTE.PRG
+	@echo "built XPADJOY.PRG, XPADKEY.PRG and XPADSTE.PRG in $(BUILD)"
 
 st: $(BUILD)/ABI.TOS $(BUILD)/XPADJOY.PRG $(BUILD)/JOYTEST.TOS \
     $(BUILD)/XPADKEY.PRG $(BUILD)/KEYTEST.TOS \
+    $(BUILD)/XPADSTE.PRG $(BUILD)/STETEST.TOS \
     $(BUILD)/XPADVIEW.PRG $(BUILD)/VIEWTEST.TOS
 	@echo "built everything that runs on an ST into $(BUILD)"
-	@echo "run: make hatari / hatari-joystick / hatari-keyboard / hatari-view"
+	@echo "run: make hatari / hatari-joystick / hatari-keyboard"
+	@echo "     make hatari-stepad / hatari-view"
 
 # Runs on the host, not in the container, since that is where Hatari is.
 hatari:
@@ -181,6 +200,13 @@ hatari-joystick:
 # The keyboard driver's self test, likewise.
 hatari-keyboard:
 	@python3 test/run-hatari.py $(BUILD)/KEYTEST.TOS
+
+# The STE driver's self test. MACHINE=ste rather than the harness
+# default, because the point of it is the enhanced ports: on a plain ST
+# the machine gate refuses and the interesting half never runs. That the
+# gate does refuse there is worth checking too, so run it both ways.
+hatari-stepad:
+	@MACHINE=ste python3 test/run-hatari.py $(BUILD)/STETEST.TOS
 
 # The viewer against its own demo provider: publishes a block, finds it
 # through the cookie, reads it back and prints one frame.

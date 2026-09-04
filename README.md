@@ -368,7 +368,62 @@ comma and period to the shoulders, Tab to select and Esc to start.
   combinations of keys register together, so some multi-key holds a game
   would expect from a controller will not all arrive.
 
-### What neither driver does
+### stepad, via the STE's enhanced ports
+
+Publishes both of an STE's 15 pin enhanced joystick ports as two pads,
+each with the d-pad, three fire buttons and two menu buttons. This is
+the only driver here that reaches a real gamepad on stock hardware: an
+Atari Jaguar style pad plugs straight in, with no adapter, cartridge or
+Bluetooth anywhere.
+
+It is also the only one that polls. Nothing calls a driver when a
+joypad button changes, because the ports are registers rather than an
+interrupt source, so this one hooks `etv_timer` at `$400` rather than
+the VBL, for the reason AGENTS.md gives: a game is far more likely to
+have taken the VBL for itself.
+
+The ports are a scanned matrix. A row is selected by pulling one bit of
+`$FF9202` low and both pads answer at once, pad 0 in the low nibble and
+pad 1 in the high one, with `$FF9200` carrying a fire and a pause line
+per pad. Four rows cover the whole pad. Everything is active low.
+
+- **STE and Falcon only.** A plain ST bus errors on `$FF9200`, so `_MCH`
+  is checked before anything is read and the driver refuses rather than
+  taking the machine down. A TT has no enhanced ports either. Note that
+  `$FF9200` must be read as a **word**: a byte read of it bus errors on
+  STE and Mega STE.
+- **A Mega STE is refused, and the reason is the interesting one.** It
+  is an STE board in a Mega case, and the case has nowhere to plug a
+  joypad in, but the registers are still there: `$FF9200` on a Mega STE
+  reads the motherboard DIP switches in its upper byte. So a driver that
+  gated on the machine *family* would find no bus error, install
+  happily, and publish two pads that could never move. Since Xpad is
+  single provider, that silently idle provider would be sitting where a
+  working one could have been. The gate uses the whole `_MCH` value,
+  because the low word is the sub model: `00010000` is an STE and
+  `00010010` is a Mega STE.
+- **The 12 key keypad is not mapped.** It is sampled, because it shares
+  its rows with the fire line, and then ignored. Xpad v1 has no home for
+  a keypad, new buttons would have to start at bit 17, and deciding to
+  spend twelve of those is not an example's call to make. `decode.h`
+  documents which key sits in which row and column for anyone who wants
+  them.
+- **A row is not a diamond.** A, B and C sit in a row on the pad and
+  Xpad's face buttons are a diamond, so there is no mapping that
+  preserves position the way the X/Y rule above asks for. A goes to
+  `XPAD_SOUTH` because it is the primary button, then B to `XPAD_EAST`
+  and C to `XPAD_WEST`. That is a convention, not a measurement.
+- **No analogue**, as above. The same ports carry paddles at `$FF9211`
+  and up, which would map onto the axes nicely, but a paddle is a
+  different peripheral and belongs in a different example.
+- **No presence detection.** The ports cannot say whether anything is
+  plugged in, so both slots always report connected and an empty port
+  reads as a pad with nothing pressed.
+- **`seq` advances every tick**, not on change, because a poll cannot
+  know a button moved without looking. Unlike the joystick driver, a
+  still pad here still commits.
+
+### What none of the drivers does
 
 - **Rumble or LEDs.** Both pass NULL for `req`, so `xpad_req()` returns
   NULL and neither claims `XPAD_CAP_RUMBLE` or `XPAD_CAP_LED`.
