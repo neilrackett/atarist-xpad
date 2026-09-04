@@ -316,6 +316,12 @@ They are also meant to genuinely work, because an example that does not
 teaches the wrong things. But every one of them is limited, and the
 limits are listed below rather than left for you to discover.
 
+| Name | Description | Device |
+| ---- | ----------- | ------ |
+| [joystick](src/drivers/joystick) | Both joystick ports as two pads, each with a d-pad and one button. | ST, Mega ST, STE, Mega STE, TT, Falcon |
+| [keyboard](src/drivers/keyboard) | The keyboard as one pad, using DOOM's default controls. | All, with TOS 2.0 or later: Mega STE, TT and Falcon ship with it, and an earlier ST or STE can be upgraded to it |
+| [stepad](src/drivers/stepad) | Both enhanced joystick ports as two pads, reading a real Jaguar style gamepad. | STE, Falcon |
+
 ### joystick, via joyvec
 
 Publishes both joystick ports as two pads, each with the d-pad and
