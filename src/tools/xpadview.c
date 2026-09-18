@@ -29,6 +29,49 @@
 #define DEMO_PROVIDER "Xpad demo provider 1.0"
 #define SAMPLE_FRAMES 50 /* one second at 50 Hz, for the seq rate */
 
+/*
+ * The rumble test. A motor at a strength you can feel through a case,
+ * for half a second.
+ *
+ * The length is the viewer's business, not the provider's: the request
+ * area carries strength and no duration, so a provider that keeps a
+ * motor turning while the magnitudes are non-zero would buzz for ever
+ * unless the consumer writes zeroes back. Stopping is part of asking.
+ */
+#define RUMBLE_FRAMES 25 /* half a second at 50 Hz */
+#define RUMBLE_TEST 200  /* hard enough to feel through a case */
+
+/*
+ * Which motors a test pulse drives, and what the status line is
+ * showing. xpad names them by frequency because the side is a
+ * property of the pad rather than of the interface, but on every pad
+ * that has two, the low frequency one is the heavy weight in the left
+ * grip and the high frequency one is the small fast weight in the
+ * right.
+ *
+ * Testing them apart is worth a key of its own: a pad with one dead
+ * motor, or a provider that has the pair the wrong way round, feels
+ * almost right when both are driven together.
+ */
+#define RUMBLE_LEFT 1  /* rumble[pad][0], low frequency  */
+#define RUMBLE_RIGHT 2 /* rumble[pad][1], high frequency */
+#define RUMBLE_BOTH (RUMBLE_LEFT | RUMBLE_RIGHT)
+#define RUMBLE_REFUSED (-1) /* no request area, or no such cap */
+
+/*
+ * Scancodes, checked alongside the ASCII byte.
+ *
+ * TOS maps a key to ASCII through the national keyboard table in ROM,
+ * so the key with Q printed on it does not send 'q' on every machine.
+ * The scancode is the physical position and is the same everywhere,
+ * which is what the on-screen legend is naming.
+ */
+#define SCAN_ESC 0x01
+#define SCAN_Q 0x10
+#define SCAN_KP_LPAREN 0x63 /* the keypad's top row, left to right */
+#define SCAN_KP_RPAREN 0x64
+#define SCAN_KP_STAR 0x66
+
 /* ------------------------------------------------------------------ */
 /* Screen                                                              */
 /* ------------------------------------------------------------------ */
@@ -259,6 +302,8 @@ static struct
     uint32_t buttons;
     int8_t lx, ly, rx, ry;
     uint8_t lt, rt;
+    /* ours, not the provider's */
+    int rumble;
 } shown;
 
 static void draw_invalidate(void)
@@ -446,6 +491,96 @@ static void draw_pad(const XPAD *x, int sel)
     shown.present = 1;
 }
 
+/*
+ * The rumble test, which is the only thing this viewer writes.
+ *
+ * File scope because the pulse outlives the keypress that started it:
+ * it has to be stopped again, half a second later or on the way out.
+ */
+static struct
+{
+    XPAD_REQ *req; /* NULL when the provider offers no request area */
+    int left;      /* frames until the pulse is stopped */
+    int pad;       /* which pad it went to, which need not still be
+                    * the selected one when it ends */
+    int state;     /* a RUMBLE_ mask, or RUMBLE_REFUSED */
+} rumble;
+
+static void rumble_write(int pad, uint8_t lo, uint8_t hi)
+{
+    rumble.req->rumble[pad][0] = lo;
+    rumble.req->rumble[pad][1] = hi;
+}
+
+/* Ask the selected pad for a pulse, on whichever motors. */
+static void rumble_send(const XPAD *x, int sel, int motors)
+{
+    if (rumble.req && (x->caps & XPAD_CAP_RUMBLE))
+    {
+        /* A pulse still running on another pad is cancelled in this
+         * same update, so the provider sees one consistent set of
+         * magnitudes rather than two pads asking at once. */
+        if (rumble.left && rumble.pad != sel)
+            rumble_write(rumble.pad, 0, 0);
+
+        rumble_write(sel, (motors & RUMBLE_LEFT) ? RUMBLE_TEST : 0,
+                     (motors & RUMBLE_RIGHT) ? RUMBLE_TEST : 0);
+        rumble.req->seq++; /* last, so the provider sees it all */
+
+        rumble.pad = sel;
+        rumble.state = motors;
+    }
+    else
+        rumble.state = RUMBLE_REFUSED;
+
+    rumble.left = RUMBLE_FRAMES;
+}
+
+/* Stop it, whether the half second ran out or the viewer is leaving.
+ * A provider holds a rumble until it is replaced, so nothing else is
+ * going to do this. */
+static void rumble_stop(void)
+{
+    if (rumble.state > 0)
+    {
+        rumble_write(rumble.pad, 0, 0);
+        rumble.req->seq++;
+    }
+
+    rumble.state = 0;
+    rumble.left = 0;
+}
+
+/* What the last rumble key did, on its own line so the pad display
+ * above it is untouched. */
+static void draw_rumble(int state)
+{
+    if (shown.valid && state == shown.rumble)
+        return;
+
+    at(15, 0);
+    switch (state)
+    {
+    case RUMBLE_REFUSED:
+        put("rumble  not offered  ");
+        break;
+    case RUMBLE_LEFT:
+        put("rumble  left         ");
+        break;
+    case RUMBLE_RIGHT:
+        put("rumble  right        ");
+        break;
+    case RUMBLE_BOTH:
+        put("rumble  both         ");
+        break;
+    default:
+        put("                     ");
+        break;
+    }
+
+    shown.rumble = state;
+}
+
 static void snapshot(const XPAD *x, int sel)
 {
     XPAD_PAD pad;
@@ -480,12 +615,19 @@ static int view(const XPAD *x, int demo_mode)
     int sel = 0;
     int running = 1;
 
+    /* The request area is the one part of the block a consumer writes,
+     * and it is optional: NULL here means the provider offers none.
+     * Fetched once, because XPAD.req is fixed for the life of a block;
+     * caps are read at the keypress instead, because a provider may
+     * gain or lose rumble as a pad comes and goes. */
+    rumble.req = xpad_req(x);
+
     cls();
     cursor(0);
     draw_invalidate(); /* nothing on the glass yet */
 
     at(23, 0);
-    put("1-4 pad   Q quit");
+    put("1-4 pad   ( ) * rumble   Q quit");
 
     while (running)
     {
@@ -494,14 +636,17 @@ static int view(const XPAD *x, int demo_mode)
 
         draw_header(x, sel, rate);
         draw_pad(x, sel);
+        draw_rumble(rumble.state);
         shown.valid = 1;
 
         while (Bconstat(2))
         {
             long key = Bconin(2);
             char c = (char)(key & 0xff);
+            unsigned scan = (unsigned)((key >> 16) & 0xff);
 
-            if (c == 'q' || c == 'Q' || c == 27)
+            if (c == 'q' || c == 'Q' || c == 27 || scan == SCAN_Q ||
+                scan == SCAN_ESC)
                 running = 0;
             else if (c >= '1' && c <= '4' && sel != c - '1')
             {
@@ -510,7 +655,18 @@ static int view(const XPAD *x, int demo_mode)
                 sel = c - '1';
                 draw_invalidate();
             }
+            /* The keypad's top row, laid out the way the motors are:
+             * ( left, ) right, * both. */
+            else if (c == '(' || scan == SCAN_KP_LPAREN)
+                rumble_send(x, sel, RUMBLE_LEFT);
+            else if (c == ')' || scan == SCAN_KP_RPAREN)
+                rumble_send(x, sel, RUMBLE_RIGHT);
+            else if (c == '*' || scan == SCAN_KP_STAR)
+                rumble_send(x, sel, RUMBLE_BOTH);
         }
+
+        if (rumble.left && --rumble.left == 0)
+            rumble_stop();
 
         Vsync();
         tick++;
@@ -522,6 +678,8 @@ static int view(const XPAD *x, int demo_mode)
             frames = 0;
         }
     }
+
+    rumble_stop(); /* never walk away leaving a motor turning */
 
     cursor(1);
     cls();
