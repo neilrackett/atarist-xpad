@@ -70,6 +70,41 @@ int main(void)
           "buttons that are not directions stay out of the nibble");
 
     /*
+     * Spare buttons become fire, which is what stops a pad having ten
+     * dead ones. The rule that matters is that a direction never
+     * does: firing the gun whenever you walk left would be a fault
+     * nobody would think to look for in a fire mask.
+     */
+    check((joypkt_spare(0) & XPAD_DPAD) == 0,
+          "no direction is ever handed out as fire");
+    check(joypkt_spare(0) == JOYPKT_ANY_BUTTON,
+          "with nothing allocated, every button is fire");
+
+    check((joypkt_spare(XPAD_WEST) & XPAD_WEST) == 0,
+          "an allocated button is not also fire");
+    check(joypkt_spare(XPAD_WEST) & XPAD_SOUTH,
+          "but its neighbours still are");
+
+    check((joypkt_spare(XPAD_WEST | XPAD_THUMBR) &
+           (XPAD_WEST | XPAD_THUMBR)) == 0,
+          "and so with several allocated");
+
+    /* The shipped defaults: autofire on west, the mouse clicked in on
+     * the right stick, everything else shooting. */
+    {
+        uint32_t fire = joypkt_spare(XPAD_WEST | XPAD_THUMBR);
+
+        check(fire & XPAD_SOUTH, "by default south fires");
+        check(fire & XPAD_NORTH, "and north");
+        check(fire & XPAD_START, "and even start");
+        check(!(fire & XPAD_WEST), "west does not, it autofires");
+        check(!(fire & XPAD_THUMBR), "nor the stick you click to click");
+    }
+
+    check(joypkt_spare(JOYPKT_ANY_BUTTON) == 0,
+          "allocating everything leaves no fire at all");
+
+    /*
      * Autofire. The shape that matters is that a held button produces
      * an alternating stream rather than a steady one: a "fire" that
      * never releases is just fire, and the game never registers a

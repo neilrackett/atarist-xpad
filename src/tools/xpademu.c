@@ -109,28 +109,40 @@ typedef struct
 } CFG;
 
 /*
- * South is fire because it is where a thumb rests, west is autofire
- * because it is the far face button and therefore the deliberate one,
- * and the right stick drives the mouse so the left can stay on the
- * d-pad. A deadzone of 40 is what the COMpad provider folds at, so the
- * mouse goes to sleep at the same deflection the d-pad bits do.
+ * Only three buttons have a named job by default, and everything left
+ * over becomes fire: see joypkt_spare(). A pad has thirteen buttons
+ * and a joystick has one, so allocating two and leaving eleven inert
+ * would be the wrong way round.
  *
- * West is the LEFT face button, not the one with Y on an Xbox pad's
- * legend. See the X/Y trap in xpad.h.
+ * West is autofire because it is the far face button and therefore the
+ * deliberate one. It is the LEFT face button, not the one with Y on an
+ * Xbox pad's legend: see the X/Y trap in xpad.h.
+ *
+ * The mouse is the right stick, clicked in for the left button, and
+ * nothing else. A right button has no default because most of what
+ * this drives has no use for one, and a chord nobody asked for is a
+ * button that surprises you.
+ *
+ * A deadzone of 40 is what the COMpad provider folds the d-pad at, so
+ * the mouse goes to sleep at the same deflection the directions do.
  */
 static CFG cfg = {
     0,
-    XPAD_SOUTH | XPAD_EAST,
+    0, /* derived at install from whatever is left over */
     XPAD_WEST,
     AUTOFIRE_TICKS(8),
     0,
     1,
     0,
-    XPAD_THUMBR | XPAD_TR,
-    XPAD_TL,
+    XPAD_THUMBR,
+    0,
     40,
     24,
 };
+
+/* Whether the config file named fire itself, in which case it is taken
+ * literally and nothing is derived. */
+static int fire_named;
 
 /* Names a person would write in a config file, mapped to the bits. */
 static const struct
@@ -204,7 +216,10 @@ static void apply(const char *key, const char *value)
     if (strcmp(key, "pad") == 0)
         cfg.pad = parse_int(value) & 3;
     else if (strcmp(key, "fire") == 0)
+    {
         cfg.fire = parse_buttons(value);
+        fire_named = 1;
+    }
     else if (strcmp(key, "autofire") == 0)
         cfg.autofire = parse_buttons(value);
     else if (strcmp(key, "autorate") == 0)
@@ -418,24 +433,77 @@ static void find_vectors(void)
     mouseslot = (void **)(kb + KBDVECS_MOUSEVEC);
 }
 
-static void describe(void)
+/*
+ * Hand out fire last, once everything with a name has taken what it
+ * wants. Mouse buttons are only spoken for while the mouse is on: with
+ * it off, clicking the stick may as well shoot.
+ */
+static void allocate_fire(void)
+{
+    uint32_t taken = cfg.autofire | cfg.jump;
+
+    if (fire_named)
+        return;
+
+    if (cfg.mouse)
+        taken |= cfg.mleft | cfg.mright;
+
+    cfg.fire = joypkt_spare(taken);
+}
+
+static void print_buttons(uint32_t mask)
 {
     unsigned i;
 
-    printf("%s\n", PROGRAM);
-    printf("Pad %d drives joystick 1. Fire is ", cfg.pad);
+    if (!mask)
+    {
+        printf("nothing");
+        return;
+    }
 
     for (i = 0; i < BUTTON_COUNT; i++)
     {
-        if (button_names[i].bit && (cfg.fire & button_names[i].bit) &&
+        /* Skip the one-letter aliases, or every face button is named
+         * twice. */
+        if (button_names[i].bit && (mask & button_names[i].bit) &&
             strlen(button_names[i].name) > 1)
             printf("%s ", button_names[i].name);
     }
+}
 
-    printf("\n");
+static void describe(void)
+{
+    printf("%s\n", PROGRAM);
+    printf("Pad %d drives joystick 1.\n", cfg.pad);
+
+    if (cfg.autofire)
+    {
+        printf("Autofire on ");
+        print_buttons(cfg.autofire);
+        printf("at %d a second.\n", INJECT_HZ / cfg.autoperiod);
+    }
+
+    if (cfg.jump)
+    {
+        printf("Jump on ");
+        print_buttons(cfg.jump);
+        printf("\n");
+    }
+
+    if (fire_named)
+    {
+        printf("Fire is ");
+        print_buttons(cfg.fire);
+        printf("\n");
+    }
+    else
+    {
+        printf("Every other button is fire.\n");
+    }
 
     if (cfg.mouse)
-        printf("Pad %d's right stick drives the mouse.\n", cfg.mouse_pad);
+        printf("Pad %d's right stick is the mouse, click it to click.\n",
+               cfg.mouse_pad);
     else
         printf("Mouse emulation is off.\n");
 }
@@ -453,6 +521,8 @@ static int install(void)
 
     if (read_config())
         printf("Read %s.\n", CFG_FILE);
+
+    allocate_fire();
 
     find_vectors();
     describe();
@@ -562,6 +632,8 @@ static int selftest(void)
     cfg.mouse = 1;
     cfg.speed = 24;
     cfg.deadzone = 40;
+    cfg.autofire = 0;
+    allocate_fire();
 
     /*
      * The divider starts at 1 so the very first tick injects, rather
@@ -608,6 +680,17 @@ static int selftest(void)
     check(joy_calls == 1, "a change injects again");
     check(seen_joy[2] == XPAD_LEFT, "with fire released");
 
+    /* Spare buttons, end to end. Handing every unallocated button to
+     * fire is the whole reason a pad has no dead ones, and a game only
+     * ever asks about fire. */
+    set_pad(XPAD_START, 0, 0);
+    ticks(4);
+    check(seen_joy[2] & JOYPKT_FIRE, "a button with no other job fires");
+
+    set_pad(XPAD_MODE, 0, 0);
+    ticks(4);
+    check(seen_joy[2] & JOYPKT_FIRE, "and so does the one nobody uses");
+
     /*
      * Autofire, end to end: holding it must produce a stream of
      * packets with fire going on and off, not one packet with fire
@@ -617,7 +700,11 @@ static int selftest(void)
     {
         int with_fire = 0, without = 0;
 
+        /* Reallocate: with west spoken for, it stops being ordinary
+         * fire, or the steady bit would mask the toggling one. */
         cfg.autofire = XPAD_WEST;
+        allocate_fire();
+
         set_pad(XPAD_WEST, 0, 0);
         joy_calls = 0;
 
@@ -649,6 +736,7 @@ static int selftest(void)
     check(joy_calls == 0, "and letting go stops the stream");
 
     cfg.autofire = 0;
+    allocate_fire();
 
     /* The mouse. A stick inside the deadzone must not creep: a cursor
      * that drifts on its own is worse than one that is slow. */

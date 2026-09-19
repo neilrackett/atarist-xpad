@@ -70,6 +70,36 @@ static uint8_t joypkt_joystick(uint32_t buttons, uint32_t fire, uint32_t jump)
 }
 
 /*
+ * Every button that is not a direction, which is every button a
+ * joystick could plausibly want to be fire.
+ *
+ * Named rather than written as a mask so that a button added at bit 17
+ * has an obvious place to join, and so the exclusion of the d-pad is
+ * visible rather than arithmetic. The directions are not in it because
+ * they already have a job: putting one in the fire mask would fire the
+ * gun whenever you walked left.
+ */
+#define JOYPKT_ANY_BUTTON                                                 \
+    (XPAD_SOUTH | XPAD_EAST | XPAD_NORTH | XPAD_WEST | XPAD_TL |          \
+     XPAD_TR | XPAD_TL2 | XPAD_TR2 | XPAD_SELECT | XPAD_START |           \
+     XPAD_MODE | XPAD_THUMBL | XPAD_THUMBR)
+
+/*
+ * What is left over once the named jobs have taken what they want.
+ *
+ * A joystick has one button, a pad has thirteen, and a game only ever
+ * asks about fire. So anything not doing something else is fire, and
+ * the pad has no dead buttons: whichever one you press, it shoots.
+ * That is a better default than picking two and leaving eleven inert,
+ * because a player's first instinct with an unfamiliar pad is to press
+ * things until something happens.
+ */
+static uint32_t joypkt_spare(uint32_t taken)
+{
+    return JOYPKT_ANY_BUTTON & ~taken;
+}
+
+/*
  * Autofire: a button that holds fire down and lets it go, repeatedly,
  * for as long as you hold it.
  *

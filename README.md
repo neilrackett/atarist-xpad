@@ -506,16 +506,24 @@ on port 1 keeps working and whichever one you move drives the game.
 | Key | Default | Takes |
 | --- | --- | --- |
 | `pad` | `0` | which pad drives joystick 1 |
-| `fire` | `south+east` | buttons that count as fire |
+| `fire` | *everything spare* | buttons that count as fire |
 | `autofire` | `west` | buttons held for repeating fire |
 | `autorate` | `8` | shots per second, 1 to 25 |
 | `jump` | `none` | a button that reads as up |
 | `mouse` | `on` | `off` disables mouse emulation |
 | `mousepad` | `0` | whose right stick drives the mouse |
-| `left` | `thumbr+tr` | buttons for left click |
-| `right` | `tl` | and for right click |
+| `left` | `thumbr` | buttons for left click |
+| `right` | *none* | and for right click |
 | `deadzone` | `40` | below this the stick is at rest |
 | `speed` | `24` | pointer movement per unit of deflection |
+
+**Fire is whatever is left over.** Only autofire, jump and the mouse
+buttons have a named job by default, and every other button becomes
+fire, so the pad has no dead ones: whichever you press, it shoots. A
+joystick has one button and a pad has thirteen, so allocating two and
+leaving eleven inert would be the wrong way round. Set `fire` yourself
+and it is taken literally instead. Directions are never handed out as
+fire however it is set, or walking left would shoot.
 
 Buttons are named by position, combined with `+`: `south` `east`
 `north` `west` `tl` `tr` `select` `start` `thumbl` `thumbr` `none`,
