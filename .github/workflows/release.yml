@@ -1,0 +1,154 @@
+name: Release
+
+# Rolling release: build the ST binaries, tag the commit with the next
+# patch version, move the lightweight "latest" tag onto it, and replace
+# the files on the "latest" release. The release's title and body are
+# left exactly as they are, since `gh release upload` touches assets
+# only, and the asset names never change, so a download link handed to
+# someone keeps working.
+#
+# Patch by default, deliberately. This repository is primarily an
+# interface, and its value comes from other people's code depending on
+# the layout being stable: a minor or major bump is a statement about
+# src/xpad.h and should be a decision rather than a side effect of
+# merging. To make one, tag the commit by hand BEFORE it lands on main
+# and this workflow will use that tag rather than inventing its own,
+# which also lets the tag carry a written message.
+
+on:
+  # Anything landing on main is a release: a merge, or a direct push.
+  # Tag pushes do not match a branch filter, so the tags this workflow
+  # creates cannot trigger it again.
+  push:
+    branches:
+      - main
+    # A prose-only push cannot change a binary, and this repository
+    # writes a lot of prose; cutting a patch version for a typo fix
+    # would be noise. GitHub still runs the job when a push touches
+    # anything else as well, and workflow_dispatch forces one by hand.
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Two merges in quick succession would otherwise race: both move the
+# latest tag and clobber the same assets, and the loser would decide
+# what the release ends up holding. Newest commit wins instead.
+concurrency:
+  group: release
+  cancel-in-progress: true
+
+env:
+  # stcmd runs docker with -it unless this is set, and a runner has no
+  # terminal.
+  STCMD_NO_TTY: 1
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # The push trigger already filters to main; this is what stops a
+    # manual dispatch from some other branch tagging and releasing it.
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v5
+        with:
+          # The next version number is counted from the tags already in
+          # the repository, and checkout fetches none of them without a
+          # full clone.
+          fetch-depth: 0
+
+      - name: Host tests
+        # Needs nothing but a compiler, so it runs before the toolkit is
+        # installed and fails fast. This also diffs the generated
+        # assembler equates against xpad.h, so a header change that was
+        # not followed by `make inc` stops here rather than shipping
+        # stale .inc files to assembly consumers.
+        run: make
+
+      - name: Install the Atari ST toolkit
+        run: curl -sL https://github.com/sidecartridge/atarist-toolkit-docker/releases/latest/download/install_atarist_toolkit_docker.sh | bash
+
+      - name: Build everything that runs on an ST
+        # `check` builds both halves of the library with warnings fatal
+        # and syntax checks the ABI assertions for m68000, so the frozen
+        # layout is asserted for the target and not only for the host.
+        # `st` then links the drivers and tools that get published.
+        run: |
+          stcmd make check
+          stcmd make st
+
+      - name: Work out the version and tag it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A tag already sitting on this commit is the maintainer's
+          # own: an ABI change gets a hand-written annotated tag before
+          # the merge. Release what it names rather than adding a second
+          # number for the same commit.
+          VERSION=$(git tag --points-at HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+
+          if [ -n "$VERSION" ]; then
+            echo "This commit is already tagged $VERSION; leaving it alone."
+          else
+            PREVIOUS=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+            # Refuse to invent a base version out of nothing: if the
+            # tags have gone missing, the fix is to restore them, not to
+            # start counting again from a number this job guessed.
+            test -n "$PREVIOUS" || { echo "No v*.*.* tag to count from."; exit 1; }
+
+            N="${PREVIOUS#v}"
+            MAJOR="${N%%.*}"
+            REST="${N#*.}"
+            MINOR="${REST%%.*}"
+            PATCH="${REST#*.}"
+            VERSION="v${MAJOR}.${MINOR}.$(( PATCH + 1 ))"
+
+            # Through the API rather than `git push`: pushing a tag is
+            # refused when the commit it points at touches
+            # .github/workflows and the token has no workflow scope,
+            # which is exactly the commit that adds these files.
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$VERSION" -f sha="$GITHUB_SHA" --silent
+            echo "Tagged $VERSION."
+          fi
+
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Move the latest tag onto this commit
+        # The "latest" release is attached to this tag, so moving it
+        # keeps the release's source link pointing at the commit the
+        # attached binaries were actually built from. PATCH first
+        # because the tag already exists; POST covers a repository where
+        # it does not yet.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/latest" \
+            -f sha="$GITHUB_SHA" -F force=true --silent \
+            || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+                 -f ref=refs/tags/latest -f sha="$GITHUB_SHA" --silent
+
+      - name: Replace the files on the latest release
+        # The programs somebody would run, and the one config file one
+        # of them reads. Not the *TEST.TOS self tests, which exist for
+        # the harness rather than for a person, and not the library
+        # sources: a consumer takes those through a submodule, which is
+        # what README's integration section tells them to do.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view latest >/dev/null 2>&1 \
+            || gh release create latest --title "Xpad" --notes "Rolling build of the example drivers and tools."
+          gh release upload latest \
+            build/XPADJOY.PRG \
+            build/XPADKEY.PRG \
+            build/XPADSTE.PRG \
+            build/XPADVIEW.PRG \
+            build/XPADEMU.PRG \
+            src/tools/XPADEMU.CFG \
+            --clobber
+          echo "Published $VERSION to the latest release."

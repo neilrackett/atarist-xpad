@@ -1,0 +1,67 @@
+name: PR
+
+# Does it still work? This runs the same steps release.yml does, minus
+# the publishing, so a pull request that would break the release fails
+# here instead. It tags nothing, publishes nothing and keeps no
+# artifacts.
+#
+# More than a build, unlike some of the sibling repositories: this one
+# has a host test suite that needs no toolchain and no emulator, so the
+# pure logic runs here too. What a runner cannot do is the third leg,
+# `make hatari*`, which boots an emulated ST. Those are still a local
+# `./verify.sh` before a release, and the reason that script exists.
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Read-only: this workflow runs code from a contributor's branch, so it
+# gets nothing it does not need. release.yml holds the write token.
+permissions:
+  contents: read
+
+# A force-push mid-review should not leave two builds racing to report.
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # stcmd runs docker with -it unless this is set, and a runner has no
+  # terminal.
+  STCMD_NO_TTY: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v5
+
+      - name: Host tests
+        # The default goal. Needs only a compiler, so it runs first and
+        # fails fast, and it diffs the generated assembler equates
+        # against xpad.h: a header change without `make inc` is caught
+        # here rather than by an assembly consumer months later.
+        run: make
+
+      - name: Install the Atari ST toolkit
+        # Generates /usr/local/bin/stcmd, which runs the m68k build in a
+        # container. The installer picks the image for the runner's
+        # architecture, so this is the x86_64 image here and an arm64
+        # one on a developer's Mac; both carry m68k-atari-mint-gcc.
+        run: curl -sL https://github.com/sidecartridge/atarist-toolkit-docker/releases/latest/download/install_atarist_toolkit_docker.sh | bash
+
+      - name: Cross compile, warnings fatal
+        # Both halves of the library for m68000, plus the ABI assertions
+        # syntax checked there, so the frozen layout is asserted for the
+        # target and not only for the host. This is where a 68000-only
+        # mistake surfaces.
+        run: stcmd make check
+
+      - name: Link everything that runs on an ST
+        # The drivers and tools, which is what the release publishes. A
+        # program that compiles but does not link would otherwise reach
+        # main and break the release build instead of this one.
+        run: stcmd make st

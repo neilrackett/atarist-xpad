@@ -99,6 +99,23 @@ container and Hatari must not run inside it, so the two halves are
 straddled by a script instead, the way md-sidepad's `build.sh` does it.
 `verify.sh` refuses to run under `stcmd` for that reason.
 
+**CI covers two of the three legs.** `.github/workflows/pr.yml` runs
+`make`, `stcmd make check` and `stcmd make st` on every pull request,
+and `release.yml` runs the same before publishing. Neither runs
+`make hatari*`: a runner has no TOS image and no emulator, and the
+emulated tests are the ones that prove residency, the cookie jar and
+the consumer path together. So a green CI means it builds and the pure
+logic holds; **`./verify.sh` locally is still what says it works**, and
+it is still the thing to run before claiming a change is done.
+
+Releases are rolling and automatic: anything landing on `main` that
+touches more than prose gets a **patch** version and replaces the
+binaries on the `latest` release. That default is deliberate, because
+this repository is primarily an interface and a minor or major bump is
+a statement about `src/xpad.h`. To make one, tag the commit by hand
+before it lands and the workflow will use that tag instead of inventing
+its own, which is also how the tag gets a written message.
+
 `hatari-integration` is the only test where provider and consumer are
 separate processes, so it is the one that proves residency, the cookie
 and the consumer path together. Prefer breaking it over letting it rot.
