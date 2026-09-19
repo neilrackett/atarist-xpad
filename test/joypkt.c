@@ -69,6 +69,63 @@ int main(void)
     check(joypkt_joystick(XPAD_START | XPAD_SELECT | XPAD_MODE, 0, 0) == 0,
           "buttons that are not directions stay out of the nibble");
 
+    /*
+     * Autofire. The shape that matters is that a held button produces
+     * an alternating stream rather than a steady one: a "fire" that
+     * never releases is just fire, and the game never registers a
+     * second shot.
+     */
+    {
+        JOYPKT_AUTO a;
+        int on = 0, off = 0, changes = 0, last = -1;
+
+        memset(&a, 0, sizeof(a));
+        check(joypkt_autofire(&a, 1, 6) == 1,
+              "autofire shoots on the first tick it is held");
+
+        memset(&a, 0, sizeof(a));
+        for (i = 0; i < 60; i++)
+        {
+            int f = joypkt_autofire(&a, 1, 6);
+
+            if (f)
+                on++;
+            else
+                off++;
+
+            if (last >= 0 && f != last)
+                changes++;
+
+            last = f;
+        }
+
+        check(on > 0 && off > 0, "and both holds and releases");
+        check(on == off, "evenly, over a whole number of cycles");
+        check(changes == 19, "ten shots in sixty ticks at a six tick period");
+
+        /* Letting go resets the phase, so the next press starts with a
+         * shot rather than wherever the counter had got to. */
+        (void)joypkt_autofire(&a, 0, 6);
+        check(joypkt_autofire(&a, 1, 6) == 1, "a fresh press shoots at once");
+
+        /* Not held is not firing, however long you wait. */
+        memset(&a, 0, sizeof(a));
+        on = 0;
+        for (i = 0; i < 60; i++)
+            on += joypkt_autofire(&a, 0, 6);
+
+        check(on == 0, "a button nobody is holding never fires");
+
+        /* A period too short to have an off half would be steady fire
+         * wearing a disguise, so it is refused outright. */
+        memset(&a, 0, sizeof(a));
+        on = 0;
+        for (i = 0; i < 20; i++)
+            on += joypkt_autofire(&a, 1, 1);
+
+        check(on == 0, "a period with no released half does nothing");
+    }
+
     /* Mouse buttons live in the header's bottom two bits. */
     check(joypkt_buttons(XPAD_TR, XPAD_TR, XPAD_TL) == JOYPKT_MOUSE_LEFT,
           "the left click is bit 1");

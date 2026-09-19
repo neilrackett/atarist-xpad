@@ -6,7 +6,7 @@
  *
  * Free of TOS dependencies so the host build tests it without an
  * emulator, the same split the drivers use for translate.h and
- * keymap.h. What is left in xpadjoy.c is vector surgery and file
+ * keymap.h. What is left in xpademu.c is vector surgery and file
  * reading, neither of which a host can check.
  *
  * Inspired by, and ported from, the assembly injector in MD/Sidepad:
@@ -67,6 +67,44 @@ static uint8_t joypkt_joystick(uint32_t buttons, uint32_t fire, uint32_t jump)
         b |= (uint8_t)XPAD_UP;
 
     return b;
+}
+
+/*
+ * Autofire: a button that holds fire down and lets it go, repeatedly,
+ * for as long as you hold it.
+ *
+ * period is one full on-and-off cycle in ticks, so at the 50 Hz this
+ * injects at, 6 is about eight shots a second. Fire is asserted for
+ * the first half and released for the second.
+ *
+ * It asserts on the very first tick the button is held, rather than
+ * after half a cycle, so a tap still shoots. Letting go resets the
+ * phase, so every press starts with a shot rather than wherever the
+ * counter happened to be.
+ */
+typedef struct
+{
+    uint8_t phase;
+} JOYPKT_AUTO;
+
+static int joypkt_autofire(JOYPKT_AUTO *a, int held, uint8_t period)
+{
+    uint8_t half;
+
+    /* A period under two cannot have an off half, and a held button
+     * that never releases is not autofire, it is fire. */
+    if (!held || period < 2)
+    {
+        a->phase = 0;
+        return 0;
+    }
+
+    half = (uint8_t)(period >> 1);
+
+    if (a->phase >= period)
+        a->phase = 0;
+
+    return a->phase++ < half;
 }
 
 /* The mouse button byte, which is the header's bottom two bits. */

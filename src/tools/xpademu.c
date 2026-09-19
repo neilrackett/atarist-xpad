@@ -65,6 +65,17 @@
 #define ETV_DIVISOR 4
 
 /*
+ * Autofire is configured in shots per second, because that is what a
+ * person means, and stored as the tick period the state machine wants.
+ * Injection runs at 50 Hz, so eight shots a second is a six tick
+ * cycle: three held, three released.
+ */
+#define INJECT_HZ 50
+#define AUTOFIRE_TICKS(hz) ((uint8_t)(INJECT_HZ / (hz)))
+#define AUTOFIRE_MIN_HZ 1
+#define AUTOFIRE_MAX_HZ 25 /* faster than this has no off half at all */
+
+/*
  * KBDVECS field offsets, in bytes from what Kbdvbase() returns.
  * joyvec really is at 24 and mousevec at 16; the struct has midivec,
  * vkbderr, vmiderr and statvec ahead of them.
@@ -86,6 +97,8 @@ typedef struct
 {
     int pad;            /* which pad drives the joystick        */
     uint32_t fire;      /* buttons that read as fire            */
+    uint32_t autofire;  /* buttons that read as repeating fire  */
+    uint8_t autoperiod; /* one on-and-off cycle, in ticks       */
     uint32_t jump;      /* button that reads as up, or 0        */
     int mouse;          /* stick as mouse at all                */
     int mouse_pad;      /* which pad drives the mouse           */
@@ -96,14 +109,20 @@ typedef struct
 } CFG;
 
 /*
- * South is fire because it is where a thumb rests, and the right stick
- * drives the mouse so the left can stay on the d-pad. A deadzone of 40
- * is what the COMpad provider folds at, so the mouse goes to sleep at
- * the same deflection the d-pad bits do.
+ * South is fire because it is where a thumb rests, west is autofire
+ * because it is the far face button and therefore the deliberate one,
+ * and the right stick drives the mouse so the left can stay on the
+ * d-pad. A deadzone of 40 is what the COMpad provider folds at, so the
+ * mouse goes to sleep at the same deflection the d-pad bits do.
+ *
+ * West is the LEFT face button, not the one with Y on an Xbox pad's
+ * legend. See the X/Y trap in xpad.h.
  */
 static CFG cfg = {
     0,
     XPAD_SOUTH | XPAD_EAST,
+    XPAD_WEST,
+    AUTOFIRE_TICKS(8),
     0,
     1,
     0,
@@ -186,6 +205,23 @@ static void apply(const char *key, const char *value)
         cfg.pad = parse_int(value) & 3;
     else if (strcmp(key, "fire") == 0)
         cfg.fire = parse_buttons(value);
+    else if (strcmp(key, "autofire") == 0)
+        cfg.autofire = parse_buttons(value);
+    else if (strcmp(key, "autorate") == 0)
+    {
+        int hz = parse_int(value);
+
+        /* Clamped rather than rejected: a rate of zero would divide by
+         * zero, and one above half the tick rate has no released half
+         * to offer, so it would be indistinguishable from holding
+         * fire down. */
+        if (hz < AUTOFIRE_MIN_HZ)
+            hz = AUTOFIRE_MIN_HZ;
+        if (hz > AUTOFIRE_MAX_HZ)
+            hz = AUTOFIRE_MAX_HZ;
+
+        cfg.autoperiod = AUTOFIRE_TICKS(hz);
+    }
     else if (strcmp(key, "jump") == 0)
         cfg.jump = parse_buttons(value);
     else if (strcmp(key, "mouse") == 0)
@@ -272,6 +308,7 @@ static uint8_t divider = 1;
 static uint8_t prev_joy;
 static uint8_t prev_mbtn;
 static JOYPKT_MOUSE macc;
+static JOYPKT_AUTO autostate;
 
 /*
  * The joystick packet is three bytes and TOS delivers it with the 0xFF
@@ -301,6 +338,14 @@ void xpademu_tick(void)
     if (xpad_read(pads, cfg.pad, &pad))
     {
         joy = joypkt_joystick(pad.buttons, cfg.fire, cfg.jump);
+
+        /* Called every tick whether or not the button is held, because
+         * the phase has to advance and releasing has to reset it. OR
+         * rather than replace, so holding fire and autofire together
+         * gives a steady fire rather than a gap. */
+        if (joypkt_autofire(&autostate, (pad.buttons & cfg.autofire) != 0,
+                            cfg.autoperiod))
+            joy |= JOYPKT_FIRE;
 
         /* On change only, because that is what the IKBD does: a game
          * hooking joyvec expects an event, not a stream. */
@@ -501,6 +546,8 @@ static void ticks(int n)
 
 static int selftest(void)
 {
+    int i;
+
     printf("Xpad joystick and mouse emulation\n\n");
 
     xpad_init(&demo, XPAD_MAX_TEST_PADS, XPAD_CAP_ANALOG, PROGRAM, 0);
@@ -560,6 +607,48 @@ static int selftest(void)
     ticks(4);
     check(joy_calls == 1, "a change injects again");
     check(seen_joy[2] == XPAD_LEFT, "with fire released");
+
+    /*
+     * Autofire, end to end: holding it must produce a stream of
+     * packets with fire going on and off, not one packet with fire
+     * held. A game counts the transitions, so a steady bit is one
+     * shot however long you lean on it.
+     */
+    {
+        int with_fire = 0, without = 0;
+
+        cfg.autofire = XPAD_WEST;
+        set_pad(XPAD_WEST, 0, 0);
+        joy_calls = 0;
+
+        for (i = 0; i < 40; i++)
+        {
+            int before = joy_calls;
+
+            ticks(4);
+
+            if (joy_calls == before)
+                continue;
+
+            if (seen_joy[2] & JOYPKT_FIRE)
+                with_fire++;
+            else
+                without++;
+        }
+
+        check(joy_calls > 8, "autofire keeps sending packets while held");
+        check(with_fire > 0 && without > 0,
+              "with fire going on and off, not held down");
+    }
+
+    /* Releasing it stops, rather than leaving fire stuck either way. */
+    set_pad(0, 0, 0);
+    ticks(4);
+    joy_calls = 0;
+    ticks(40);
+    check(joy_calls == 0, "and letting go stops the stream");
+
+    cfg.autofire = 0;
 
     /* The mouse. A stick inside the deadzone must not creep: a cursor
      * that drifts on its own is worse than one that is slow. */

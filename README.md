@@ -498,10 +498,34 @@ pad through COMpad, a Mega Drive pad through MD/Sidepad, an STE joypad,
 the keyboard shim, comes out the far end as input that needs no port at
 all.
 
-It installs from `AUTO` after a provider, reads `XPADEMU.CFG` if there
-is one beside it, and stays resident on `etv_timer`. The real vectors
-are left in place, so a physical joystick on port 1 keeps working and
-whichever one you move drives the game.
+It installs from `AUTO` after a provider, reads `XPADEMU.CFG` from the
+root of the boot drive if there is one, and stays resident on
+`etv_timer`. The real vectors are left in place, so a physical joystick
+on port 1 keeps working and whichever one you move drives the game.
+
+| Key | Default | Takes |
+| --- | --- | --- |
+| `pad` | `0` | which pad drives joystick 1 |
+| `fire` | `south+east` | buttons that count as fire |
+| `autofire` | `west` | buttons held for repeating fire |
+| `autorate` | `8` | shots per second, 1 to 25 |
+| `jump` | `none` | a button that reads as up |
+| `mouse` | `on` | `off` disables mouse emulation |
+| `mousepad` | `0` | whose right stick drives the mouse |
+| `left` | `thumbr+tr` | buttons for left click |
+| `right` | `tl` | and for right click |
+| `deadzone` | `40` | below this the stick is at rest |
+| `speed` | `24` | pointer movement per unit of deflection |
+
+Buttons are named by position, combined with `+`: `south` `east`
+`north` `west` `tl` `tr` `select` `start` `thumbl` `thumbr` `none`,
+with `a` and `b` accepted for south and east. There is deliberately no
+`x` or `y`, because `XPAD_X` is north and `XPAD_Y` is west and a config
+file has nowhere to print the warning `xpad.h` does.
+
+The file is read once, at install. The tick runs in interrupt context
+where GEMDOS is not reentrant, so nothing here can be re-read while
+resident.
 
 The mechanism is ported from the assembly injector in
 [MD/Sidepad](https://github.com/neilrackett/md-sidepad), which worked
