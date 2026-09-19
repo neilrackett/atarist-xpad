@@ -25,6 +25,7 @@
 #include <string.h>
 
 #include "../xpad.h"
+#include "viewkeys.h"
 
 #define DEMO_PROVIDER "Xpad demo provider 1.0"
 #define SAMPLE_FRAMES 50 /* one second at 50 Hz, for the seq rate */
@@ -58,19 +59,6 @@
 #define RUMBLE_BOTH (RUMBLE_LEFT | RUMBLE_RIGHT)
 #define RUMBLE_REFUSED (-1) /* no request area, or no such cap */
 
-/*
- * Scancodes, checked alongside the ASCII byte.
- *
- * TOS maps a key to ASCII through the national keyboard table in ROM,
- * so the key with Q printed on it does not send 'q' on every machine.
- * The scancode is the physical position and is the same everywhere,
- * which is what the on-screen legend is naming.
- */
-#define SCAN_ESC 0x01
-#define SCAN_Q 0x10
-#define SCAN_KP_LPAREN 0x63 /* the keypad's top row, left to right */
-#define SCAN_KP_RPAREN 0x64
-#define SCAN_KP_STAR 0x66
 
 /* ------------------------------------------------------------------ */
 /* Screen                                                              */
@@ -642,27 +630,37 @@ static int view(const XPAD *x, int demo_mode)
         while (Bconstat(2))
         {
             long key = Bconin(2);
-            char c = (char)(key & 0xff);
-            unsigned scan = (unsigned)((key >> 16) & 0xff);
+            int want = view_key((char)(key & 0xff),
+                                (unsigned)((key >> 16) & 0xff));
 
-            if (c == 'q' || c == 'Q' || c == 27 || scan == SCAN_Q ||
-                scan == SCAN_ESC)
-                running = 0;
-            else if (c >= '1' && c <= '4' && sel != c - '1')
+            switch (want)
             {
-                /* Everything below the header now describes a
-                 * different pad, so repaint it. */
-                sel = c - '1';
-                draw_invalidate();
-            }
+            case VIEW_QUIT:
+                running = 0;
+                break;
+
             /* The keypad's top row, laid out the way the motors are:
              * ( left, ) right, * both. */
-            else if (c == '(' || scan == SCAN_KP_LPAREN)
+            case VIEW_RUMBLE_LEFT:
                 rumble_send(x, sel, RUMBLE_LEFT);
-            else if (c == ')' || scan == SCAN_KP_RPAREN)
+                break;
+            case VIEW_RUMBLE_RIGHT:
                 rumble_send(x, sel, RUMBLE_RIGHT);
-            else if (c == '*' || scan == SCAN_KP_STAR)
+                break;
+            case VIEW_RUMBLE_BOTH:
                 rumble_send(x, sel, RUMBLE_BOTH);
+                break;
+
+            default:
+                if (want >= VIEW_PAD_0 && sel != want - VIEW_PAD_0)
+                {
+                    /* Everything below the header now describes a
+                     * different pad, so repaint it. */
+                    sel = want - VIEW_PAD_0;
+                    draw_invalidate();
+                }
+                break;
+            }
         }
 
         if (rumble.left && --rumble.left == 0)

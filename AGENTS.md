@@ -29,10 +29,12 @@ src/drivers/joystick  example provider: both joystick ports as two pads
 src/drivers/keyboard  example provider: DOOM controls as one pad
 src/drivers/stepad    example provider: the STE's enhanced ports
 src/tools/xpadview.c  live viewer, and the reference consumer
+src/tools/viewkeys.h  what a keypress means to it: TOS-free, host tested
 test/abi.c          ABI assertions, mostly static; host and ST builds
 test/joystick.c     IKBD translation tests, host only
 test/keyboard.c     keymap tests, host only
 test/stepad.c       STE matrix decode tests, host only
+test/viewkeys.c     viewer key tests, host only
 test/mint/osbind.h  host stand-in for <mint/osbind.h>
 test/run-hatari.py  boots an ST program under Hatari, relays its output
 verify.sh           runs every test, across both toolchains
@@ -119,6 +121,14 @@ Drivers follow the same split. Anything with logic worth getting wrong
 lives in a TOS-free header the host build tests (`translate.h`,
 `keymap.h`), and whatever needs an ST gets a self test in the program
 itself.
+
+The viewer follows it too, in `viewkeys.h`, and for a sharper reason:
+Hatari's `--auto` takes a path and no arguments, so **nothing automated
+can press a key in the live loop**. `hatari-view` exercises the
+snapshot path and nothing else. Keys were therefore the one part of the
+program with no coverage at all, which is how `Q` came to be reported
+doing nothing on a real machine while Escape worked. Anything else
+reached only by a keypress belongs in that header.
 
 Those self tests are reached through a second binary built with
 `-DXPAD_SELFTEST`, because Hatari's `--auto` takes a path and no

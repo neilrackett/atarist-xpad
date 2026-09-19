@@ -95,6 +95,9 @@ test: | $(BUILD)
 	$(HOSTCC) $(HOSTCFLAGS) test/stepad.c -o $(BUILD)/stepad
 	@$(BUILD)/stepad
 	@echo
+	$(HOSTCC) $(HOSTCFLAGS) test/viewkeys.c -o $(BUILD)/viewkeys
+	@$(BUILD)/viewkeys
+	@echo
 	@$(MAKE) --no-print-directory inc-check
 
 # The assembler equates are generated from xpad.h, so they cannot be
