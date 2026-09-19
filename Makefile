@@ -48,7 +48,7 @@ TOOLS       = $(SRC)/tools
 # one a newcomer or a pre-commit hook can actually run.
 .DEFAULT_GOAL := test
 
-.PHONY: all check test inc inc-check examples st hatari hatari-joystick hatari-keyboard hatari-stepad hatari-view hatari-integration drivers tools clean
+.PHONY: all check test inc inc-check examples st hatari hatari-joystick hatari-keyboard hatari-stepad hatari-view hatari-emu hatari-integration drivers tools clean
 
 all: check test
 
@@ -97,6 +97,9 @@ test: | $(BUILD)
 	@echo
 	$(HOSTCC) $(HOSTCFLAGS) test/viewkeys.c -o $(BUILD)/viewkeys
 	@$(BUILD)/viewkeys
+	@echo
+	$(HOSTCC) $(HOSTCFLAGS) test/joypkt.c -o $(BUILD)/joypkt
+	@$(BUILD)/joypkt
 	@echo
 	@$(MAKE) --no-print-directory inc-check
 
@@ -177,8 +180,21 @@ $(BUILD)/XPADVIEW.PRG: $(VIEWDEP) | $(BUILD)
 $(BUILD)/VIEWTEST.TOS: $(VIEWDEP) | $(BUILD)
 	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(VIEWSRC) -o $@
 
-tools: $(BUILD)/XPADVIEW.PRG
-	@echo "built $(BUILD)/XPADVIEW.PRG"
+# The consumer that turns any provider back into a joystick and a
+# mouse. Resident like a driver, but it publishes nothing, so it lives
+# with the tools rather than under drivers.
+EMUSRC = $(TOOLS)/xpademu.c $(TOOLS)/emuetv.s $(SRC)/xpad.c \
+         $(SRC)/xpad_provider.c
+EMUDEP = $(EMUSRC) $(TOOLS)/joypkt.h $(SRC)/xpad.h
+
+$(BUILD)/XPADEMU.PRG: $(EMUDEP) | $(BUILD)
+	$(CC) $(CFLAGS) $(EMUSRC) -o $@
+
+$(BUILD)/EMUTEST.TOS: $(EMUDEP) | $(BUILD)
+	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(EMUSRC) -o $@
+
+tools: $(BUILD)/XPADVIEW.PRG $(BUILD)/XPADEMU.PRG
+	@echo "built $(BUILD)/XPADVIEW.PRG and $(BUILD)/XPADEMU.PRG"
 
 drivers: $(BUILD)/XPADJOY.PRG $(BUILD)/XPADKEY.PRG $(BUILD)/XPADSTE.PRG
 	@echo "built XPADJOY.PRG, XPADKEY.PRG and XPADSTE.PRG in $(BUILD)"
@@ -186,7 +202,8 @@ drivers: $(BUILD)/XPADJOY.PRG $(BUILD)/XPADKEY.PRG $(BUILD)/XPADSTE.PRG
 st: $(BUILD)/ABI.TOS $(BUILD)/XPADJOY.PRG $(BUILD)/JOYTEST.TOS \
     $(BUILD)/XPADKEY.PRG $(BUILD)/KEYTEST.TOS \
     $(BUILD)/XPADSTE.PRG $(BUILD)/STETEST.TOS \
-    $(BUILD)/XPADVIEW.PRG $(BUILD)/VIEWTEST.TOS
+    $(BUILD)/XPADVIEW.PRG $(BUILD)/VIEWTEST.TOS \
+    $(BUILD)/XPADEMU.PRG $(BUILD)/EMUTEST.TOS
 	@echo "built everything that runs on an ST into $(BUILD)"
 	@echo "run: make hatari / hatari-joystick / hatari-keyboard"
 	@echo "     make hatari-stepad / hatari-view"
@@ -215,6 +232,9 @@ hatari-stepad:
 # through the cookie, reads it back and prints one frame.
 hatari-view:
 	@python3 test/run-hatari.py $(BUILD)/VIEWTEST.TOS
+
+hatari-emu:
+	@python3 test/run-hatari.py $(BUILD)/EMUTEST.TOS
 
 # End to end: a driver installed from AUTO, then a separate program
 # finding it through the cookie jar and reading its pads. This is the

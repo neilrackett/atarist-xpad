@@ -487,6 +487,42 @@ own should copy:
 - **Fill the whole pad, or set the unchanging fields once at startup.**
   The back buffer holds what you wrote two commits ago, not zeroes.
 
+## The joystick and mouse shim
+
+`src/tools/xpademu.c` is the other direction from the drivers, and the
+one most people will actually run. It publishes nothing and owns
+nothing: it reads whatever `XPAD` block is installed and injects real
+IKBD packets, so an unmodified game from 1987 sees a joystick on port 1
+and GEM sees a mouse. Whatever put the block in the jar, a Bluetooth
+pad through COMpad, a Mega Drive pad through MD/Sidepad, an STE joypad,
+the keyboard shim, comes out the far end as input that needs no port at
+all.
+
+It installs from `AUTO` after a provider, reads `XPADEMU.CFG` if there
+is one beside it, and stays resident on `etv_timer`. The real vectors
+are left in place, so a physical joystick on port 1 keeps working and
+whichever one you move drives the game.
+
+The mechanism is ported from the assembly injector in
+[MD/Sidepad](https://github.com/neilrackett/md-sidepad), which worked
+it out on real hardware. Three parts of it are not obvious:
+
+- **The vectors are read live**, out of `KBDVECS`, on every injection.
+  A game installs its own `joyvec` *after* a resident program, so a
+  pointer saved at install time points at whatever the game replaced
+  and the game hears nothing.
+- **The IKBD interrupt is masked** across the call. Driving `joyvec`
+  leaves the ACIA enabled, so a real packet arriving mid-call would
+  re-enter the handler on top of itself.
+- **The `0xFF` header sits at an odd address**, because consumers read
+  a word from header+1 to get both joystick bytes aligned, and a 68000
+  address errors otherwise.
+
+Its limit is worth stating plainly: a game that drives the IKBD ACIA at
+`$FFFC00` itself, rather than letting TOS deliver its input, never sees
+any of this. You cannot write to a receive register, so there is no
+software fix for that tier.
+
 ## The viewer
 
 `src/tools/xpadview.c` shows live state for whichever provider is

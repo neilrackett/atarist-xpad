@@ -30,11 +30,15 @@ src/drivers/keyboard  example provider: DOOM controls as one pad
 src/drivers/stepad    example provider: the STE's enhanced ports
 src/tools/xpadview.c  live viewer, and the reference consumer
 src/tools/viewkeys.h  what a keypress means to it: TOS-free, host tested
+src/tools/xpademu.c   resident consumer: any provider as joystick 1 and mouse
+src/tools/joypkt.h    xpad state to IKBD packets: TOS-free, host tested
+src/tools/emuetv.s    its ETV trampoline and IKBD vector glue
 test/abi.c          ABI assertions, mostly static; host and ST builds
 test/joystick.c     IKBD translation tests, host only
 test/keyboard.c     keymap tests, host only
 test/stepad.c       STE matrix decode tests, host only
 test/viewkeys.c     viewer key tests, host only
+test/joypkt.c       IKBD packet tests, host only
 test/mint/osbind.h  host stand-in for <mint/osbind.h>
 test/run-hatari.py  boots an ST program under Hatari, relays its output
 verify.sh           runs every test, across both toolchains
@@ -86,6 +90,7 @@ make hatari-joystick               joystick driver self test
 make hatari-keyboard               keyboard driver self test
 make hatari-stepad                 STE joypad self test, on an emulated STE
 make hatari-view                   viewer against its demo provider
+make hatari-emu                    joystick and mouse injection self test
 make hatari-integration            drivers from AUTO, viewer reads them
 ```
 
@@ -312,6 +317,41 @@ Follow the existing file exactly rather than any general convention.
   is nowhere in this repo. The two vector trampolines are ABI glue, not
   optimisation: a vector hands its argument in a register, which is not
   the m68k C calling convention.
+
+## The injection shim
+
+`src/tools/xpademu.c` is a **consumer**, not a provider, so the
+single-provider rule does not apply to it and it composes with every
+driver here and every external one.
+
+Its mechanism is ported from
+[MD/Sidepad](https://github.com/neilrackett/md-sidepad)'s
+`target/atarist/src/userfw.s`, which established it on real hardware.
+Three things in it are load-bearing and easy to undo by accident:
+
+- **`joyslot` and `mouseslot` hold the ADDRESSES of the `KBDVECS`
+  fields, not their contents.** A game installs its own `joyvec` after
+  a resident program, so a pointer cached at install reaches whatever
+  the game displaced and the game hears nothing. Do not "optimise" the
+  indirection away.
+- **`xpademu_call_vec()` raises to IPL 7 around the call.** The ACIA is
+  left unmasked while `joyvec` runs, so a real IKBD packet would
+  otherwise re-enter the handler on top of itself. It is also why the
+  self test drives ticks through `Supexec`: user mode may not touch the
+  interrupt level.
+- **The `0xFF` header is at `joy_packet[1]`, an odd address.** TOS
+  delivers it that way so a consumer can read a word from header+1 and
+  get both joystick bytes aligned; PP's JOYMOUT tester does exactly
+  that, and a 68000 address errors on a word read from an odd address.
+
+The trampoline saves the whole register set rather than the ABI scratch
+set, because `mousevec` reaches line-A and the AES cursor machinery,
+which clobber registers C assumes are preserved.
+
+It cannot reach a game that drives the IKBD ACIA at `$FFFC00` directly.
+That is a property of the hardware, not a gap to close: you cannot
+write to a receive register. Say so rather than implying wider
+coverage.
 
 ## Licensing
 

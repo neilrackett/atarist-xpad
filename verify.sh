@@ -73,6 +73,7 @@ if step "link everything that runs on an ST" stcmd make st; then
     step "STE joypad refuses on a Mega STE" \
         env MACHINE=megaste python3 test/run-hatari.py build/STETEST.TOS
     step "viewer against its demo provider" make hatari-view
+    step "joystick and mouse injection" make hatari-emu
     step "drivers resident from AUTO, read by another process" \
         make hatari-integration
 else
