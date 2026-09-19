@@ -56,19 +56,34 @@ int main(void)
     /* The rumble keys, which must not be confusable with each other:
      * the whole reason they are separate is to tell one motor from the
      * other, so a test that let them collide would defeat the point. */
-    check(view_key('(', 0) == VIEW_RUMBLE_LEFT, "( rumbles the left motor");
-    check(view_key(')', 0) == VIEW_RUMBLE_RIGHT, "and ) the right");
-    check(view_key('*', 0) == VIEW_RUMBLE_BOTH, "* rumbles both");
+    check(view_key('(', 0) - VIEW_RUMBLE_0 == VIEW_RUMBLE_LEFT,
+          "( rumbles the left motor");
+    check(view_key(')', 0) - VIEW_RUMBLE_0 == VIEW_RUMBLE_RIGHT,
+          "and ) the right");
+    check(view_key('*', 0) - VIEW_RUMBLE_0 == VIEW_RUMBLE_BOTH,
+          "* rumbles both");
 
-    check(view_key(0, VIEW_SCAN_KP_LPAREN) == VIEW_RUMBLE_LEFT,
+    check(view_key(0, VIEW_SCAN_KP_LPAREN) - VIEW_RUMBLE_0 ==
+              VIEW_RUMBLE_LEFT,
           "the keypad's ( works without its ASCII");
-    check(view_key(0, VIEW_SCAN_KP_RPAREN) == VIEW_RUMBLE_RIGHT,
+    check(view_key(0, VIEW_SCAN_KP_RPAREN) - VIEW_RUMBLE_0 ==
+              VIEW_RUMBLE_RIGHT,
           "and so does its )");
-    check(view_key(0, VIEW_SCAN_KP_STAR) == VIEW_RUMBLE_BOTH,
+    check(view_key(0, VIEW_SCAN_KP_STAR) - VIEW_RUMBLE_0 == VIEW_RUMBLE_BOTH,
           "and its *");
 
     check(VIEW_RUMBLE_LEFT != VIEW_RUMBLE_RIGHT,
           "the two motors are not the same request");
+    check(VIEW_RUMBLE_BOTH == (VIEW_RUMBLE_LEFT | VIEW_RUMBLE_RIGHT),
+          "and both is the two of them together");
+
+    /* The verdict carries the mask the viewer writes, so a key that
+     * asked for one motor cannot reach the request area as the other.
+     * Nothing enforced that while the two were separate enumerations
+     * joined by a switch. */
+    check((view_key('(', 0) - VIEW_RUMBLE_0) == VIEW_RUMBLE_LEFT &&
+              (view_key(')', 0) - VIEW_RUMBLE_0) == VIEW_RUMBLE_RIGHT,
+          "the mask survives the trip from key to request");
 
     /* Anything else is ignored rather than mistaken for something. A
      * viewer that quit on a stray byte would be worse than one that
@@ -78,10 +93,13 @@ int main(void)
     check(view_key(' ', 0) == VIEW_NOTHING, "nor space");
     check(view_key('\r', 0) == VIEW_NOTHING, "nor return");
 
-    /* VIEW_PAD_0 has to sit above every other verdict, or a pad
-     * selection would be read as one of them. */
-    check(VIEW_PAD_0 > VIEW_RUMBLE_BOTH && VIEW_PAD_0 > VIEW_QUIT,
-          "pad selections sort above every other verdict");
+    /* The two payload-carrying verdicts have to stay clear of each
+     * other and of everything below them, or a pad selection would be
+     * read as a rumble or the other way round. */
+    check(VIEW_PAD_0 > VIEW_RUMBLE_0 + VIEW_RUMBLE_BOTH,
+          "pad selections sort above every rumble");
+    check(VIEW_RUMBLE_0 > VIEW_QUIT && VIEW_RUMBLE_0 > VIEW_NOTHING,
+          "and rumbles above the verdicts that carry nothing");
 
     printf("\n%s\n", failures ? "FAILED" : "all checks passed");
 

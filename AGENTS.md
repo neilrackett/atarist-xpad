@@ -127,8 +127,14 @@ Hatari's `--auto` takes a path and no arguments, so **nothing automated
 can press a key in the live loop**. `hatari-view` exercises the
 snapshot path and nothing else. Keys were therefore the one part of the
 program with no coverage at all, which is how `Q` came to be reported
-doing nothing on a real machine while Escape worked. Anything else
-reached only by a keypress belongs in that header.
+doing nothing on a real machine while Escape worked.
+
+What is there is the key decision: which key means what. The pulse it
+starts is **not**, and should be: `rumble_send()` and `rumble_stop()`
+in `xpadview.c` are pure decisions with no TOS in them, they are where
+the real hazard lives (a motor left turning after the viewer exits),
+and no test reaches them. Moving them is the next thing anyone touching
+this should do.
 
 Those self tests are reached through a second binary built with
 `-DXPAD_SELFTEST`, because Hatari's `--auto` takes a path and no

@@ -43,22 +43,18 @@
 #define RUMBLE_TEST 200  /* hard enough to feel through a case */
 
 /*
- * Which motors a test pulse drives, and what the status line is
- * showing. xpad names them by frequency because the side is a
- * property of the pad rather than of the interface, but on every pad
- * that has two, the low frequency one is the heavy weight in the left
- * grip and the high frequency one is the small fast weight in the
- * right.
+ * Which motors a test pulse drives. The masks come from viewkeys.h,
+ * because that is where a keypress turns into one of them.
  *
- * Testing them apart is worth a key of its own: a pad with one dead
- * motor, or a provider that has the pair the wrong way round, feels
- * almost right when both are driven together.
+ * xpad names the motors by frequency, since the side is a property of
+ * the pad rather than of the interface, but on every pad that has two
+ * the low frequency one is the heavy weight in the left grip and the
+ * high frequency one is the small fast weight in the right. Testing
+ * them apart is worth a key of its own: a pad with one dead motor, or
+ * a provider holding the pair the wrong way round, feels almost right
+ * when both are driven together.
  */
-#define RUMBLE_LEFT 1  /* rumble[pad][0], low frequency  */
-#define RUMBLE_RIGHT 2 /* rumble[pad][1], high frequency */
-#define RUMBLE_BOTH (RUMBLE_LEFT | RUMBLE_RIGHT)
 #define RUMBLE_REFUSED (-1) /* no request area, or no such cap */
-
 
 /* ------------------------------------------------------------------ */
 /* Screen                                                              */
@@ -500,30 +496,6 @@ static void rumble_write(int pad, uint8_t lo, uint8_t hi)
     rumble.req->rumble[pad][1] = hi;
 }
 
-/* Ask the selected pad for a pulse, on whichever motors. */
-static void rumble_send(const XPAD *x, int sel, int motors)
-{
-    if (rumble.req && (x->caps & XPAD_CAP_RUMBLE))
-    {
-        /* A pulse still running on another pad is cancelled in this
-         * same update, so the provider sees one consistent set of
-         * magnitudes rather than two pads asking at once. */
-        if (rumble.left && rumble.pad != sel)
-            rumble_write(rumble.pad, 0, 0);
-
-        rumble_write(sel, (motors & RUMBLE_LEFT) ? RUMBLE_TEST : 0,
-                     (motors & RUMBLE_RIGHT) ? RUMBLE_TEST : 0);
-        rumble.req->seq++; /* last, so the provider sees it all */
-
-        rumble.pad = sel;
-        rumble.state = motors;
-    }
-    else
-        rumble.state = RUMBLE_REFUSED;
-
-    rumble.left = RUMBLE_FRAMES;
-}
-
 /* Stop it, whether the half second ran out or the viewer is leaving.
  * A provider holds a rumble until it is replaced, so nothing else is
  * going to do this. */
@@ -539,34 +511,59 @@ static void rumble_stop(void)
     rumble.left = 0;
 }
 
-/* What the last rumble key did, on its own line so the pad display
- * above it is untouched. */
-static void draw_rumble(int state)
+/* Ask the selected pad for a pulse, on whichever motors. */
+static void rumble_send(const XPAD *x, int sel, int motors)
 {
-    if (shown.valid && state == shown.rumble)
+    /*
+     * Whatever is running stops first, before anything is decided.
+     *
+     * That keeps two pads from buzzing at once, which is why it used
+     * to happen inside the branch below, but it also covers the case
+     * that branch could not: a request refused while a pulse is
+     * running. Capabilities change under a live block, and a provider
+     * that loses its last rumble-capable pad drops XPAD_CAP_RUMBLE, so
+     * a refusal can arrive with magnitudes already in the request
+     * area. Stranding them there means a motor that never stops, since
+     * a provider holds a rumble until something replaces it.
+     */
+    rumble_stop();
+
+    if (rumble.req && (x->caps & XPAD_CAP_RUMBLE))
+    {
+        rumble_write(sel, (motors & VIEW_RUMBLE_LEFT) ? RUMBLE_TEST : 0,
+                     (motors & VIEW_RUMBLE_RIGHT) ? RUMBLE_TEST : 0);
+        rumble.req->seq++; /* last, so the provider sees it all */
+
+        rumble.pad = sel;
+        rumble.state = motors;
+    }
+    else
+        rumble.state = RUMBLE_REFUSED;
+
+    rumble.left = RUMBLE_FRAMES;
+}
+
+
+/* What the last rumble key did, on its own line so the pad display
+ * above it is untouched. Indexed by the motor mask, so the four
+ * entries are nothing, left, right and both, in that order. */
+static void draw_rumble(void)
+{
+    static const char *const said[] = {
+        "                     ",
+        "rumble  left         ",
+        "rumble  right        ",
+        "rumble  both         ",
+    };
+
+    if (shown.valid && rumble.state == shown.rumble)
         return;
 
     at(15, 0);
-    switch (state)
-    {
-    case RUMBLE_REFUSED:
-        put("rumble  not offered  ");
-        break;
-    case RUMBLE_LEFT:
-        put("rumble  left         ");
-        break;
-    case RUMBLE_RIGHT:
-        put("rumble  right        ");
-        break;
-    case RUMBLE_BOTH:
-        put("rumble  both         ");
-        break;
-    default:
-        put("                     ");
-        break;
-    }
+    put(rumble.state == RUMBLE_REFUSED ? "rumble  not offered  "
+                                       : said[rumble.state & 3]);
 
-    shown.rumble = state;
+    shown.rumble = rumble.state;
 }
 
 static void snapshot(const XPAD *x, int sel)
@@ -624,7 +621,7 @@ static int view(const XPAD *x, int demo_mode)
 
         draw_header(x, sel, rate);
         draw_pad(x, sel);
-        draw_rumble(rumble.state);
+        draw_rumble();
         shown.valid = 1;
 
         while (Bconstat(2))
@@ -639,26 +636,21 @@ static int view(const XPAD *x, int demo_mode)
                 running = 0;
                 break;
 
-            /* The keypad's top row, laid out the way the motors are:
-             * ( left, ) right, * both. */
-            case VIEW_RUMBLE_LEFT:
-                rumble_send(x, sel, RUMBLE_LEFT);
-                break;
-            case VIEW_RUMBLE_RIGHT:
-                rumble_send(x, sel, RUMBLE_RIGHT);
-                break;
-            case VIEW_RUMBLE_BOTH:
-                rumble_send(x, sel, RUMBLE_BOTH);
-                break;
-
             default:
-                if (want >= VIEW_PAD_0 && sel != want - VIEW_PAD_0)
+                if (want >= VIEW_PAD_0)
                 {
                     /* Everything below the header now describes a
                      * different pad, so repaint it. */
-                    sel = want - VIEW_PAD_0;
-                    draw_invalidate();
+                    if (sel != want - VIEW_PAD_0)
+                    {
+                        sel = want - VIEW_PAD_0;
+                        draw_invalidate();
+                    }
                 }
+                /* The keypad's top row, laid out the way the motors
+                 * are: ( left, ) right, * both. */
+                else if (want >= VIEW_RUMBLE_0)
+                    rumble_send(x, sel, want - VIEW_RUMBLE_0);
                 break;
             }
         }

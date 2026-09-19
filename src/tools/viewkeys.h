@@ -28,13 +28,24 @@
 #define VIEW_SCAN_KP_RPAREN 0x64
 #define VIEW_SCAN_KP_STAR 0x66
 
-/* What a key asks for. VIEW_PAD_0 through VIEW_PAD_0 + 3 select a pad,
- * so the caller subtracts rather than switching on four values. */
+/*
+ * What a key asks for.
+ *
+ * Two of these carry a payload rather than switching on every value:
+ * VIEW_RUMBLE_0 plus a motor mask, and VIEW_PAD_0 plus a pad index, so
+ * the caller subtracts. The rumble mask is the same one the viewer
+ * writes into the request area, which is the point: two enumerations
+ * for the same three motor sets, joined by a switch whose only job was
+ * to convert one into the other, is a correspondence nothing enforces.
+ */
 #define VIEW_NOTHING 0
 #define VIEW_QUIT 1
-#define VIEW_RUMBLE_LEFT 2
-#define VIEW_RUMBLE_RIGHT 3
-#define VIEW_RUMBLE_BOTH 4
+
+#define VIEW_RUMBLE_LEFT 1  /* rumble[pad][0], low frequency  */
+#define VIEW_RUMBLE_RIGHT 2 /* rumble[pad][1], high frequency */
+#define VIEW_RUMBLE_BOTH (VIEW_RUMBLE_LEFT | VIEW_RUMBLE_RIGHT)
+
+#define VIEW_RUMBLE_0 8
 #define VIEW_PAD_0 16
 
 /*
@@ -51,13 +62,13 @@ static int view_key(char c, unsigned scan)
         return VIEW_PAD_0 + (c - '1');
 
     if (c == '(' || scan == VIEW_SCAN_KP_LPAREN)
-        return VIEW_RUMBLE_LEFT;
+        return VIEW_RUMBLE_0 + VIEW_RUMBLE_LEFT;
 
     if (c == ')' || scan == VIEW_SCAN_KP_RPAREN)
-        return VIEW_RUMBLE_RIGHT;
+        return VIEW_RUMBLE_0 + VIEW_RUMBLE_RIGHT;
 
     if (c == '*' || scan == VIEW_SCAN_KP_STAR)
-        return VIEW_RUMBLE_BOTH;
+        return VIEW_RUMBLE_0 + VIEW_RUMBLE_BOTH;
 
     return VIEW_NOTHING;
 }
