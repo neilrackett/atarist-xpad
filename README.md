@@ -19,6 +19,15 @@ The ST has no way to describe a controller with more than one button.
 struct, consumers poll it, and neither end needs to know how the other
 works.
 
+## Downloads
+
+Prebuilt drivers and tools, `XPADEMU.CFG` included, are on the
+[latest release](https://github.com/neilrackett/atarist-xpad/releases/tag/latest),
+rebuilt whenever `main` changes. To build them yourself,
+`STCMD_NO_TTY=1 stcmd make st` puts the same files in `dist/`. A port
+that consumes Xpad needs none of them: it takes the sources, as
+[Integrating into a port](#integrating-into-a-port) describes.
+
 ## Why a struct rather than a vector
 
 `joyvec` is a callback because the IKBD is event driven. Games poll once
@@ -297,11 +306,11 @@ this order:
 4. Plain joystick plus keyboard.
 
 A shim that publishes an `XPAD` block populated from steps 2 to 4 lets a
-port implement only step 1 and get the rest for nothing. Two such
-drivers ship here, covering a plain joystick and the keyboard. Step 2,
-the STE enhanced ports, is still to write, and so is step 3's trick of
-borrowing joystick 1's fire bit as a second button: the joystick driver
-publishes each port as its own pad rather than merging them.
+port implement only step 1 and get the rest for nothing. Three such
+drivers ship here, covering a plain joystick, the keyboard and the STE
+enhanced ports. Step 3's trick of borrowing joystick 1's fire bit as a
+second button is still to write: the joystick driver publishes each
+port as its own pad rather than merging them.
 
 ## Example drivers
 
@@ -431,21 +440,22 @@ per pad. Four rows cover the whole pad. Everything is active low.
 
 ### What none of the drivers does
 
-- **Rumble or LEDs.** Both pass NULL for `req`, so `xpad_req()` returns
+- **Rumble or LEDs.** All three pass NULL for `req`, so `xpad_req()` returns
   NULL and neither claims `XPAD_CAP_RUMBLE` or `XPAD_CAP_LED`.
 - **More than two pads**, though the ABI carries four. The keyboard
-  driver publishes one, the joystick driver two.
-- **Coexist with another provider.** Xpad is single provider, so both
-  refuse to install when an `XPAD` cookie is already present rather than
+  driver publishes one, the joystick and STE drivers two each.
+- **Coexist with another provider.** Xpad is single provider, so all
+  three refuse to install when an `XPAD` cookie is already present rather than
   displace something better.
 
 ### Where they have been tested
 
-Both run self tests on an emulated ST under Hatari, and both are
-additionally exercised end to end: installed resident from `AUTO`, then
-read by a separate program through the cookie jar.
+All three run self tests under Hatari, the STE driver on an emulated
+STE and Mega STE. The joystick and keyboard drivers are additionally
+exercised end to end: installed resident from `AUTO`, then read by a
+separate program through the cookie jar.
 
-**Neither has been run on real hardware.** That is the distance between
+**None has been run on real hardware.** That is the distance between
 "passes its tests" and "works", and it is worth closing before trusting
 either one in anger.
 
@@ -555,6 +565,11 @@ Its limit is worth stating plainly: a game that drives the IKBD ACIA at
 any of this. You cannot write to a receive register, so there is no
 software fix for that tier.
 
+On real hardware, driven by a Bluetooth pad through COMpad, the mouse
+and every MD/Sidepad demo work as intended. Most original games tried
+from floppy do not, which is that limit showing: they read the IKBD
+themselves.
+
 ## The viewer
 
 `src/tools/xpadview.c` shows live state for whichever provider is
@@ -592,9 +607,17 @@ with no hardware and nothing else installed. `-1` prints one frame as
 plain text and exits, which is what makes it testable without a person
 watching.
 
-Its limits: the live display has only been checked in an emulator at 80
-columns, so the 40 column layout that low resolution gives you is
-unverified, and buttons are labelled by position rather than by the
+It is idle when nothing changes: each frame compares what the provider
+published with what is on screen and draws nothing if they match.
+Buttons redraw the moment they change. Sticks and triggers redraw at
+most ten times a second, and only the numbers that moved, because a
+real stick at rest jitters by a count or two and the TOS console is
+slow enough for that to matter. Timing comes from the 200 Hz system
+timer, so a rumble pulse is half a second however busy the screen is.
+
+Its limits: the live display has been checked at 80 columns, in an
+emulator and on a Mega STE, but the 40 column layout that low
+resolution gives you is unverified, and buttons are labelled by position rather than by the
 letters printed on a pad, deliberately. See the X/Y trap above.
 
 ## Integrating into a port
