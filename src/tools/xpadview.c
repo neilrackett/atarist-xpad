@@ -21,6 +21,7 @@
  */
 
 #include <mint/osbind.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -28,7 +29,17 @@
 #include "viewkeys.h"
 
 #define DEMO_PROVIDER "Xpad demo provider 1.0"
-#define SAMPLE_FRAMES 50 /* one second at 50 Hz, for the seq rate */
+
+/*
+ * Time comes from _hz_200, the 200 Hz system timer, and never from
+ * counting trips round the loop. A trip is a frame only when nothing
+ * was drawn: a repaint can take several, and a mono monitor's frame is
+ * 71 Hz anyway. Counting trips stretched the rumble pulse and inflated
+ * the rate whenever the screen was busy, which is when you look.
+ */
+#define HZ_200 ((volatile uint32_t *)0x4BA)
+#define TICKS_PER_SEC 200
+#define ANALOG_TICKS 20 /* sticks and triggers redraw at most 10 times a second */
 
 /*
  * The rumble test. A motor at a strength you can feel through a case,
@@ -39,7 +50,7 @@
  * motor turning while the magnitudes are non-zero would buzz for ever
  * unless the consumer writes zeroes back. Stopping is part of asking.
  */
-#define RUMBLE_FRAMES 25 /* half a second at 50 Hz */
+#define RUMBLE_TICKS 100 /* half a second */
 #define RUMBLE_TEST 200  /* hard enough to feel through a case */
 
 /*
@@ -60,9 +71,47 @@
 /* Screen                                                              */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Everything the live view draws goes through the BIOS, never GEMDOS,
+ * because the keys are read through the BIOS too.
+ *
+ * GEMDOS console output checks the keyboard for Ctrl-C and Ctrl-S
+ * before every character, and any other key it finds there is moved
+ * into GEMDOS's own type-ahead buffer, where Bconstat() never sees it.
+ * So a key pressed while the screen was being drawn simply vanished:
+ * the first rumble key worked, because nothing was drawing, and the
+ * next looked ignored, because the first one's status line was. It is
+ * faster as well, since it skips that check on every character.
+ */
 static void put(const char *s)
 {
-    (void)Cconws(s);
+    while (*s)
+        (void)Bconout(2, (unsigned char)*s++);
+}
+
+/* printf for the live view, through put(). Nothing it draws is longer
+ * than a line. */
+static void say(const char *fmt, ...)
+{
+    char line[82];
+    va_list ap;
+
+    va_start(ap, fmt);
+    vsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+
+    put(line);
+}
+
+/* A system variable below $800, so supervisor only. */
+static long read_hz_200(void)
+{
+    return (long)*HZ_200;
+}
+
+static uint32_t now(void)
+{
+    return (uint32_t)Supexec(read_hz_200);
 }
 
 /* VT52, so this works in every resolution rather than banging a
@@ -144,7 +193,7 @@ static void button_labels(unsigned from, unsigned to)
     unsigned i;
 
     for (i = from; i < to; i++)
-        printf("%3s", buttons[i].label);
+        say("%3s", buttons[i].label);
 }
 
 static void button_states(uint32_t held, unsigned from, unsigned to)
@@ -152,7 +201,7 @@ static void button_states(uint32_t held, unsigned from, unsigned to)
     unsigned i;
 
     for (i = from; i < to; i++)
-        printf("%3s", (held & buttons[i].bit) ? "*" : ".");
+        say("%3s", (held & buttons[i].bit) ? "*" : ".");
 }
 
 /* ------------------------------------------------------------------ */
@@ -239,20 +288,20 @@ static void explain_absence(void)
 
     if (!x)
     {
-        put("No Xpad provider found.\r\n\r\n");
-        put("No XPAD cookie is installed. Load a driver,\r\n");
-        put("or run XPADVIEW -d to see the viewer work.\r\n");
+        fputs("No Xpad provider found.\r\n\r\n", stdout);
+        fputs("No XPAD cookie is installed. Load a driver,\r\n", stdout);
+        fputs("or run XPADVIEW -d to see the viewer work.\r\n", stdout);
         return;
     }
 
-    put("An XPAD cookie is installed, but the block it\r\n");
-    put("points at is not one this build can read.\r\n\r\n");
+    fputs("An XPAD cookie is installed, but the block it\r\n", stdout);
+    fputs("points at is not one this build can read.\r\n\r\n", stdout);
     printf("  magic    %08lx (want %08lx)\r\n",
            (unsigned long)x->magic, (unsigned long)XPAD_MAGIC);
     printf("  version  %d.%d (want major %d)\r\n",
            x->version >> 8, x->version & 0xff, XPAD_VER_MAJOR);
     printf("  pads     %d, %d bytes each\r\n", x->pad_count, x->pad_size);
-    put("\r\nThat is a provider bug, not a missing provider.\r\n");
+    fputs("\r\nThat is a provider bug, not a missing provider.\r\n", stdout);
 }
 
 /* ------------------------------------------------------------------ */
@@ -314,17 +363,17 @@ static void draw_header(const XPAD *x, int sel, unsigned rate)
     if (!shown.valid)
     {
         at(1, 0);
-        printf("%-32s", x->provider ? x->provider : "(unnamed)");
+        say("%-32s", x->provider ? x->provider : "(unnamed)");
 
         at(0, 0);
-        printf("Xpad viewer            v%d.%d       ",
+        say("Xpad viewer            v%d.%d       ",
                x->version >> 8, x->version & 0xff);
     }
 
     if (!shown.valid || rate != shown.rate)
     {
         at(0, 30);
-        printf("%3u/s ", rate);
+        say("%3u/s ", rate);
         shown.rate = rate;
     }
 
@@ -332,7 +381,7 @@ static void draw_header(const XPAD *x, int sel, unsigned rate)
     {
         at(2, 0);
         put("caps ");
-        printf("%s%s%s%s      ",
+        say("%s%s%s%s      ",
                (x->caps & XPAD_CAP_ANALOG) ? "ANALOG " : "",
                (x->caps & XPAD_CAP_RUMBLE) ? "RUMBLE " : "",
                (x->caps & XPAD_CAP_LED) ? "LED " : "",
@@ -353,9 +402,9 @@ static void draw_header(const XPAD *x, int sel, unsigned rate)
 
         at(3, 5 + i * 4);
         if (i == sel)
-            printf("[%d]%c", i, live ? '*' : ' ');
+            say("[%d]%c", i, live ? '*' : ' ');
         else
-            printf(" %d %c", i, live ? '*' : ' ');
+            say(" %d %c", i, live ? '*' : ' ');
         shown.live[i] = live;
     }
 
@@ -368,14 +417,28 @@ static void draw_header(const XPAD *x, int sel, unsigned rate)
     if (!shown.valid || x->active != shown.active)
     {
         at(3, 5 + XPAD_MAX_PADS * 4);
-        printf("  buf %d      ", x->active);
+        say("  buf %d      ", x->active);
         shown.active = x->active;
     }
 
     shown.sel = sel;
 }
 
-static void draw_pad(const XPAD *x, int sel)
+/* One number, in place. A stick at rest still jitters by a count or
+ * two, so redrawing only the axis that moved is a quarter of the line. */
+static void draw_num(int row, int col, const char *fmt, int v)
+{
+    at(row, col);
+    say(fmt, v);
+}
+
+/*
+ * `analog` says whether sticks and triggers may be redrawn this time.
+ * They change almost every frame on a real pad and nobody reads a
+ * number at 50 Hz, so they are held to ANALOG_TICKS; buttons are not,
+ * because a missed press is the thing this viewer exists to show.
+ */
+static void draw_pad(const XPAD *x, int sel, int analog)
 {
     XPAD_PAD pad;
     int present = xpad_read(x, sel, &pad);
@@ -388,12 +451,12 @@ static void draw_pad(const XPAD *x, int sel)
             int row;
 
             at(5, 0);
-            printf("Pad %d is not present.%-18s", sel, "");
+            say("Pad %d is not present.%-18s", sel, "");
 
             for (row = 6; row <= 13; row++)
             {
                 at(row, 0);
-                printf("%-40s", "");
+                say("%-40s", "");
             }
             shown.present = 0;
         }
@@ -408,7 +471,7 @@ static void draw_pad(const XPAD *x, int sel)
     if (fresh || pad.type != shown.type || pad.flags != shown.flags)
     {
         at(5, 0);
-        printf("Pad %d  %-12s %s%s%s     ", sel, type_name(pad.type),
+        say("Pad %d  %-12s %s%s%s     ", sel, type_name(pad.type),
                (pad.flags & XPAD_PAD_ANALOG) ? "ANALOG " : "",
                (pad.flags & XPAD_PAD_WIRELESS) ? "BT " : "",
                (pad.flags & XPAD_PAD_LOWBATT) ? "LOWBATT" : "");
@@ -428,7 +491,7 @@ static void draw_pad(const XPAD *x, int sel)
     if (fresh || pad.buttons != shown.buttons)
     {
         at(6, 0);
-        printf("buttons %08lx", (unsigned long)pad.buttons);
+        say("buttons %08lx", (unsigned long)pad.buttons);
 
         if (fresh)
         {
@@ -454,22 +517,36 @@ static void draw_pad(const XPAD *x, int sel)
         shown.buttons = pad.buttons;
     }
 
-    if (fresh || pad.lx != shown.lx || pad.ly != shown.ly ||
-        pad.rx != shown.rx || pad.ry != shown.ry)
+    if (fresh)
     {
         at(12, 0);
-        printf("stick L %+4d,%+4d   R %+4d,%+4d",
+        say("stick L %+4d,%+4d   R %+4d,%+4d",
                pad.lx, pad.ly, pad.rx, pad.ry);
-        shown.lx = pad.lx; shown.ly = pad.ly;
-        shown.rx = pad.rx; shown.ry = pad.ry;
+        at(13, 0);
+        say("trig  L %3u  R %3u        ", pad.lt, pad.rt);
+    }
+    else if (analog)
+    {
+        /* Columns match the formats above. */
+        if (pad.lx != shown.lx)
+            draw_num(12, 8, "%+4d", pad.lx);
+        if (pad.ly != shown.ly)
+            draw_num(12, 13, "%+4d", pad.ly);
+        if (pad.rx != shown.rx)
+            draw_num(12, 22, "%+4d", pad.rx);
+        if (pad.ry != shown.ry)
+            draw_num(12, 27, "%+4d", pad.ry);
+        if (pad.lt != shown.lt)
+            draw_num(13, 8, "%3u", pad.lt);
+        if (pad.rt != shown.rt)
+            draw_num(13, 15, "%3u", pad.rt);
     }
 
-    if (fresh || pad.lt != shown.lt || pad.rt != shown.rt)
+    if (fresh || analog)
     {
-        at(13, 0);
-        printf("trig  L %3u  R %3u        ", pad.lt, pad.rt);
-        shown.lt = pad.lt;
-        shown.rt = pad.rt;
+        shown.lx = pad.lx; shown.ly = pad.ly;
+        shown.rx = pad.rx; shown.ry = pad.ry;
+        shown.lt = pad.lt; shown.rt = pad.rt;
     }
 
     shown.present = 1;
@@ -484,7 +561,7 @@ static void draw_pad(const XPAD *x, int sel)
 static struct
 {
     XPAD_REQ *req; /* NULL when the provider offers no request area */
-    int left;      /* frames until the pulse is stopped */
+    uint32_t until; /* _hz_200 at which the pulse is stopped */
     int pad;       /* which pad it went to, which need not still be
                     * the selected one when it ends */
     int state;     /* a RUMBLE_ mask, or RUMBLE_REFUSED */
@@ -508,11 +585,10 @@ static void rumble_stop(void)
     }
 
     rumble.state = 0;
-    rumble.left = 0;
 }
 
 /* Ask the selected pad for a pulse, on whichever motors. */
-static void rumble_send(const XPAD *x, int sel, int motors)
+static void rumble_send(const XPAD *x, int sel, int motors, uint32_t t)
 {
     /*
      * Whatever is running stops first, before anything is decided.
@@ -540,7 +616,7 @@ static void rumble_send(const XPAD *x, int sel, int motors)
     else
         rumble.state = RUMBLE_REFUSED;
 
-    rumble.left = RUMBLE_FRAMES;
+    rumble.until = t + RUMBLE_TICKS;
 }
 
 
@@ -595,8 +671,9 @@ static void snapshot(const XPAD *x, int sel)
 
 static int view(const XPAD *x, int demo_mode)
 {
-    unsigned tick = 0, frames = 0, rate = 0;
+    unsigned tick = 0, rate = 0;
     uint16_t last_seq = x->seq;
+    uint32_t t = now(), rate_since = t, analog_since = t;
     int sel = 0;
     int running = 1;
 
@@ -616,14 +693,15 @@ static int view(const XPAD *x, int demo_mode)
 
     while (running)
     {
+        int analog;
+
+        t = now();
+
         if (demo_mode)
             demo_frame(tick);
 
-        draw_header(x, sel, rate);
-        draw_pad(x, sel);
-        draw_rumble();
-        shown.valid = 1;
-
+        /* Keys first, so a press acts before this trip's repaint rather
+         * than after it. */
         while (Bconstat(2))
         {
             long key = Bconin(2);
@@ -650,23 +728,38 @@ static int view(const XPAD *x, int demo_mode)
                 /* The keypad's top row, laid out the way the motors
                  * are: ( left, ) right, * both. */
                 else if (want >= VIEW_RUMBLE_0)
-                    rumble_send(x, sel, want - VIEW_RUMBLE_0);
+                    rumble_send(x, sel, want - VIEW_RUMBLE_0, t);
                 break;
             }
         }
 
-        if (rumble.left && --rumble.left == 0)
+        if (!running)
+            break;
+
+        if (rumble.state && (int32_t)(t - rumble.until) >= 0)
             rumble_stop();
+
+        /* Scaled by the time that really passed, which is a second
+         * give or take one trip round the loop. */
+        if (t - rate_since >= TICKS_PER_SEC)
+        {
+            rate = (unsigned)((uint32_t)(uint16_t)(x->seq - last_seq) *
+                              TICKS_PER_SEC / (t - rate_since));
+            last_seq = x->seq;
+            rate_since = t;
+        }
+
+        analog = t - analog_since >= ANALOG_TICKS;
+        if (analog)
+            analog_since = t;
+
+        draw_header(x, sel, rate);
+        draw_pad(x, sel, analog);
+        draw_rumble();
+        shown.valid = 1;
 
         Vsync();
         tick++;
-
-        if (++frames >= SAMPLE_FRAMES)
-        {
-            rate = (uint16_t)(x->seq - last_seq);
-            last_seq = x->seq;
-            frames = 0;
-        }
     }
 
     rumble_stop(); /* never walk away leaving a motor turning */
@@ -726,7 +819,7 @@ int main(int argc, char **argv)
 
         if (!xpad_publish(&demo))
         {
-            put("Could not install the XPAD cookie. Is the jar full?\r\n");
+            fputs("Could not install the XPAD cookie. Is the jar full?\r\n", stdout);
             return 1;
         }
     }

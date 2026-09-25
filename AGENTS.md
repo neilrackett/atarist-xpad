@@ -248,6 +248,19 @@ Keep it that way. Anything added to the live view needs a field in
 whenever something invalidates the whole layout: entry, and switching
 pad. The one-shot `-1` snapshot path is separate and unaffected.
 
+**The live view draws through the BIOS, never GEMDOS.** Keys are read
+with `Bconstat`/`Bconin`, and GEMDOS console output (`Cconws`, `printf`
+to the console) checks the keyboard before every character, moving any
+key it finds into its own type-ahead buffer where the BIOS never sees
+it. With both in use, a key pressed while anything was drawing
+vanished: on real hardware the first rumble key worked and the next
+seemed ignored. Use `put()` and `say()`, and keep `printf` to the
+snapshot and error paths, which read no keys.
+
+Time comes from `_hz_200`, not from counting trips round the loop. A
+trip that draws takes more than a frame, so counted trips stretched
+the rumble pulse whenever the screen was busy.
+
 ## Deliberate decisions
 
 Listed so they do not get helpfully undone:
