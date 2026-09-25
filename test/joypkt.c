@@ -198,8 +198,8 @@ int main(void)
 
     check(i < 200, "a stick just outside it does move, eventually");
 
-    /* Direction. The IKBD's y axis points up and the screen's points
-     * down, so dy is negated on the way out. */
+    /* Direction. xpad's +y is down, and so is the IKBD's as TOS sets
+     * it up, so dy passes through with its sign unchanged. */
     memset(&m, 0, sizeof(m));
     (void)joypkt_mouse(&m, 127, 0, 40, 24, &dx, &dy);
     check(dx > 0, "a rightward stick moves right");
@@ -210,11 +210,11 @@ int main(void)
 
     memset(&m, 0, sizeof(m));
     (void)joypkt_mouse(&m, 0, 127, 40, 24, &dx, &dy);
-    check(dy < 0, "a stick pushed down moves down the screen");
+    check(dy > 0, "a stick pushed down moves down the screen");
 
     memset(&m, 0, sizeof(m));
     (void)joypkt_mouse(&m, 0, -127, 40, 24, &dx, &dy);
-    check(dy > 0, "and one pushed up moves up it");
+    check(dy < 0, "and one pushed up moves up it");
 
     /* Faster deflection moves further, or the analogue stick is a
      * digital one with extra steps. */
@@ -253,7 +253,7 @@ int main(void)
     memset(&m, 0, sizeof(m));
     for (i = 0; i < 100; i++)
     {
-        (void)joypkt_mouse(&m, 127, -127, 1, 255, &dx, &dy);
+        (void)joypkt_mouse(&m, 127, 127, 1, 255, &dx, &dy);
         if (dx < 0 || dy < 0)
             break;
     }

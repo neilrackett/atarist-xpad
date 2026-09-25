@@ -752,11 +752,11 @@ static int selftest(void)
           "with a relative mouse header");
     check((int8_t)seen_mouse[1] > 0, "rightwards for a rightward stick");
 
-    /* The IKBD's y axis points up and the screen's points down. */
+    /* Both xpad and the IKBD, as TOS sets it up, put +y down. */
     set_pad(0, 0, 127);
     mouse_calls = 0;
     ticks(4);
-    check((int8_t)seen_mouse[2] < 0, "and down the screen for a down stick");
+    check((int8_t)seen_mouse[2] > 0, "and down the screen for a down stick");
 
     /* Buttons reach the header even when the stick is still. */
     set_pad(XPAD_THUMBR, 0, 0);

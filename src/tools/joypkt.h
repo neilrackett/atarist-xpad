@@ -221,12 +221,13 @@ static int joypkt_mouse(JOYPKT_MOUSE *m, int8_t x, int8_t y,
     *dx = (int8_t)px;
 
     /*
-     * The IKBD's y axis points up and the screen's points down, so the
-     * sign flips here. Without it the mouse goes the wrong way
-     * vertically, which reads as a wiring fault rather than a
-     * convention.
+     * No sign flip. xpad's +y is down the screen, and TOS runs the IKBD
+     * with its y origin at the top, so a positive dy is down as well.
+     * This once negated it, and the pointer went the wrong way
+     * vertically on a real machine: the tests had been written to the
+     * same wrong belief, so they passed.
      */
-    *dy = (int8_t)-py;
+    *dy = (int8_t)py;
 
     return px != 0 || py != 0;
 }
