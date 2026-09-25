@@ -144,11 +144,11 @@ jobs:
           gh release view latest >/dev/null 2>&1 \
             || gh release create latest --title "Xpad" --notes "Rolling build of the example drivers and tools."
           gh release upload latest \
-            build/XPADJOY.PRG \
-            build/XPADKEY.PRG \
-            build/XPADSTE.PRG \
-            build/XPADVIEW.PRG \
-            build/XPADEMU.PRG \
-            src/tools/XPADEMU.CFG \
+            dist/XPADJOY.PRG \
+            dist/XPADKEY.PRG \
+            dist/XPADSTE.PRG \
+            dist/XPADVIEW.PRG \
+            dist/XPADEMU.PRG \
+            dist/XPADEMU.CFG \
             --clobber
           echo "Published $VERSION to the latest release."

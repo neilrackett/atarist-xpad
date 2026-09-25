@@ -42,6 +42,10 @@ HOSTCFLAGS  = $(WARNINGS) -O1 -std=c11 -Itest \
 SRC         = src
 DRIVERS     = $(SRC)/drivers
 BUILD       = build
+# What goes on a disk: the programs somebody runs, and the one config
+# file one of them reads. Self tests, objects and host binaries stay in
+# build, so this can be copied to a floppy as it stands.
+DIST        = dist
 TOOLS       = $(SRC)/tools
 
 # test runs anywhere; check needs the cross toolchain. Default to the
@@ -137,7 +141,7 @@ JOYSRC = $(JOYDIR)/joystick.c $(JOYDIR)/joyvec.s $(SRC)/xpad.c \
          $(SRC)/xpad_provider.c
 JOYDEP = $(JOYSRC) $(JOYDIR)/translate.h $(SRC)/xpad.h
 
-$(BUILD)/XPADJOY.PRG: $(JOYDEP) | $(BUILD)
+$(DIST)/XPADJOY.PRG: $(JOYDEP) | $(DIST)
 	$(CC) $(CFLAGS) $(JOYSRC) -o $@
 
 # The same source built to run its self test and exit. A separate binary
@@ -151,7 +155,7 @@ KEYSRC = $(KEYDIR)/keyboard.c $(KEYDIR)/kbdvec.s $(SRC)/xpad.c \
          $(SRC)/xpad_provider.c
 KEYDEP = $(KEYSRC) $(KEYDIR)/keymap.h $(SRC)/xpad.h
 
-$(BUILD)/XPADKEY.PRG: $(KEYDEP) | $(BUILD)
+$(DIST)/XPADKEY.PRG: $(KEYDEP) | $(DIST)
 	$(CC) $(CFLAGS) $(KEYSRC) -o $@
 
 $(BUILD)/KEYTEST.TOS: $(KEYDEP) | $(BUILD)
@@ -164,7 +168,7 @@ STESRC = $(STEDIR)/stepad.c $(STEDIR)/etv.s $(SRC)/xpad.c \
          $(SRC)/xpad_provider.c
 STEDEP = $(STESRC) $(STEDIR)/decode.h $(SRC)/xpad.h
 
-$(BUILD)/XPADSTE.PRG: $(STEDEP) | $(BUILD)
+$(DIST)/XPADSTE.PRG: $(STEDEP) | $(DIST)
 	$(CC) $(CFLAGS) $(STESRC) -o $@
 
 $(BUILD)/STETEST.TOS: $(STEDEP) | $(BUILD)
@@ -174,7 +178,7 @@ $(BUILD)/STETEST.TOS: $(STEDEP) | $(BUILD)
 VIEWSRC = $(TOOLS)/xpadview.c $(SRC)/xpad.c $(SRC)/xpad_provider.c
 VIEWDEP = $(VIEWSRC) $(SRC)/xpad.h
 
-$(BUILD)/XPADVIEW.PRG: $(VIEWDEP) | $(BUILD)
+$(DIST)/XPADVIEW.PRG: $(VIEWDEP) | $(DIST)
 	$(CC) $(CFLAGS) $(VIEWSRC) -o $@
 
 $(BUILD)/VIEWTEST.TOS: $(VIEWDEP) | $(BUILD)
@@ -187,24 +191,27 @@ EMUSRC = $(TOOLS)/xpademu.c $(TOOLS)/emuetv.s $(SRC)/xpad.c \
          $(SRC)/xpad_provider.c
 EMUDEP = $(EMUSRC) $(TOOLS)/joypkt.h $(SRC)/xpad.h
 
-$(BUILD)/XPADEMU.PRG: $(EMUDEP) | $(BUILD)
+$(DIST)/XPADEMU.PRG: $(EMUDEP) | $(DIST)
 	$(CC) $(CFLAGS) $(EMUSRC) -o $@
 
 $(BUILD)/EMUTEST.TOS: $(EMUDEP) | $(BUILD)
 	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(EMUSRC) -o $@
 
-tools: $(BUILD)/XPADVIEW.PRG $(BUILD)/XPADEMU.PRG
-	@echo "built $(BUILD)/XPADVIEW.PRG and $(BUILD)/XPADEMU.PRG"
+$(DIST)/XPADEMU.CFG: $(TOOLS)/XPADEMU.CFG | $(DIST)
+	cp $< $@
 
-drivers: $(BUILD)/XPADJOY.PRG $(BUILD)/XPADKEY.PRG $(BUILD)/XPADSTE.PRG
-	@echo "built XPADJOY.PRG, XPADKEY.PRG and XPADSTE.PRG in $(BUILD)"
+tools: $(DIST)/XPADVIEW.PRG $(DIST)/XPADEMU.PRG $(DIST)/XPADEMU.CFG
+	@echo "built XPADVIEW.PRG and XPADEMU.PRG in $(DIST)"
 
-st: $(BUILD)/ABI.TOS $(BUILD)/XPADJOY.PRG $(BUILD)/JOYTEST.TOS \
-    $(BUILD)/XPADKEY.PRG $(BUILD)/KEYTEST.TOS \
-    $(BUILD)/XPADSTE.PRG $(BUILD)/STETEST.TOS \
-    $(BUILD)/XPADVIEW.PRG $(BUILD)/VIEWTEST.TOS \
-    $(BUILD)/XPADEMU.PRG $(BUILD)/EMUTEST.TOS
-	@echo "built everything that runs on an ST into $(BUILD)"
+drivers: $(DIST)/XPADJOY.PRG $(DIST)/XPADKEY.PRG $(DIST)/XPADSTE.PRG
+	@echo "built XPADJOY.PRG, XPADKEY.PRG and XPADSTE.PRG in $(DIST)"
+
+st: $(BUILD)/ABI.TOS $(DIST)/XPADJOY.PRG $(BUILD)/JOYTEST.TOS \
+    $(DIST)/XPADKEY.PRG $(BUILD)/KEYTEST.TOS \
+    $(DIST)/XPADSTE.PRG $(BUILD)/STETEST.TOS \
+    $(DIST)/XPADVIEW.PRG $(BUILD)/VIEWTEST.TOS \
+    $(DIST)/XPADEMU.PRG $(DIST)/XPADEMU.CFG $(BUILD)/EMUTEST.TOS
+	@echo "built the programs into $(DIST) and the self tests into $(BUILD)"
 	@echo "run: make hatari / hatari-joystick / hatari-keyboard"
 	@echo "     make hatari-stepad / hatari-view"
 
@@ -240,12 +247,12 @@ hatari-emu:
 # finding it through the cookie jar and reading its pads. This is the
 # only test where provider and consumer are different processes.
 hatari-integration:
-	@python3 test/run-hatari.py $(BUILD)/VIEWTEST.TOS $(BUILD)/XPADJOY.PRG
+	@python3 test/run-hatari.py $(BUILD)/VIEWTEST.TOS $(DIST)/XPADJOY.PRG
 	@echo
-	@python3 test/run-hatari.py $(BUILD)/VIEWTEST.TOS $(BUILD)/XPADKEY.PRG
+	@python3 test/run-hatari.py $(BUILD)/VIEWTEST.TOS $(DIST)/XPADKEY.PRG
 
-$(BUILD):
-	@mkdir -p $(BUILD)
+$(BUILD) $(DIST):
+	@mkdir -p $@
 
 clean:
-	@rm -rf $(BUILD)
+	@rm -rf $(BUILD) $(DIST)
