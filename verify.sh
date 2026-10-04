@@ -52,6 +52,7 @@ fi
 
 # Host first: it needs no toolchain and fails fastest.
 step "host tests" make
+step "DevOps workstation tool" make test-devops
 
 # The ST toolchain half. Everything after this needs the binaries it
 # produces, so a failure here makes the rest meaningless.
@@ -72,6 +73,7 @@ if step "link everything that runs on an ST" stcmd make st; then
     # refuse it without a bus error to warn anyone.
     step "STE joypad refuses on a Mega STE" \
         env MACHINE=megaste python3 test/run-hatari.py build/STETEST.TOS
+    step "DevOps driver reads the workstation's block" make hatari-devops
     step "viewer against its demo provider" make hatari-view
     step "joystick and mouse injection" make hatari-emu
     step "drivers resident from AUTO, read by another process" \

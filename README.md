@@ -330,6 +330,7 @@ limits are listed below rather than left for you to discover.
 | [joystick](src/drivers/joystick) | Both joystick ports as two pads, each with a d-pad and one button. | ST, Mega ST, STE, Mega STE, TT, Falcon |
 | [keyboard](src/drivers/keyboard) | The keyboard as one pad, using DOOM's default controls. | All, with TOS 2.0 or later: Mega STE, TT and Falcon ship with it, and an earlier ST or STE can be upgraded to it |
 | [stepad](src/drivers/stepad) | Both enhanced joystick ports as two pads, reading a real Jaguar style gamepad. | STE, Falcon |
+| [devops](src/drivers/devops) | Up to four pads driven from the workstation, for unattended tests and remote play. | Any, with a SidecarTridge Multi-device running md-devops with its rom4 area |
 
 ### joystick, via joyvec
 
@@ -438,22 +439,96 @@ per pad. Four rows cover the whole pad. Everything is active low.
   know a button moved without looking. Unlike the joystick driver, a
   still pad here still commits.
 
+### devops, from the workstation through md-devops
+
+Publishes up to four pads whose state comes from the workstation, so a
+script can play a game unattended or a person can drive one from across
+the room. It needs a SidecarTridge Multi-device running md-devops with
+its rom4 area: 1 KB of the cartridge window that the workstation writes
+over HTTP and any ST program reads.
+
+It is the only driver here that never reads a controller, and the only
+one that does not stay resident, because the block lives in the
+cartridge. `xpaddev.py`, beside the driver, writes a whole XPAD block
+into the rom4 area and then commits pad state into it the way
+`xpad_commit()` does: back buffer, then `seq`, then `active`, in one
+HTTP request that md-devops applies in that order. The ST cannot write
+the cartridge, so `XPADDEV.PRG` only checks that the block is there and
+points the cookie at it.
+
+```sh
+python3 src/drivers/devops/xpaddev.py init        # once the SidecarTridge is up
+python3 src/drivers/devops/xpaddev.py set south start --lx 100
+python3 src/drivers/devops/xpaddev.py tap --ms 200 east
+python3 src/drivers/devops/xpaddev.py show
+python3 src/drivers/devops/xpaddev.py run steps.txt
+```
+
+`set` holds exactly what it is given and releases everything else on
+that pad; `tap` presses, waits and lets go; `off` disconnects a pad;
+`run` takes the same commands one per line, plus `wait MS`, from a file
+or stdin. Buttons are named by position as in `XPADEMU.CFG`, sticks run
+-127 to 127 and triggers 0 to 255, and the left stick is folded into
+the d-pad with the usual radial deadzone. `--host` or `$SIDECART_HOST`
+names the SidecarTridge, as for md-devops' own CLI. The top of
+`xpaddev.py` has the details.
+
+- **Needs md-devops with the rom4 area**, which is proposed to
+  SidecarTridge but not yet in a release. Without it the driver
+  refuses.
+- **Run `init` before the ST boots.** The driver refuses an area with no
+  block in it rather than publish a cookie that points at nothing,
+  because a consumer looks once, at startup, and XPADEMU refuses to
+  install without a provider. The area survives an ST reset, so after a
+  SidecarTridge restart it is `init`, then reset the ST.
+- **No rumble or LEDs.** `req` is NULL: a consumer cannot write a
+  request into a cartridge.
+- **A SidecarTridge restart empties the area**, and a consumer still
+  holding the block then reads four disconnected pads, which is what a
+  provider going away is meant to look like.
+- **Each change is an HTTP request**, so input arrives at network pace,
+  not frame by frame. `run` keeps the block's state itself and spends
+  one request per step.
+- **One writer at a time.** Each `xpaddev.py` assumes it is the only
+  one.
+- **The first 160 bytes of the area are the block's.** Anything else
+  using rom4 has to stay clear of them.
+- **The Mega STE's cache is unknown territory.** md-drives-emulator
+  found that with the cache on a Mega STE answers cartridge reads from
+  the cache, so a consumer polling this block could see a stale pad.
+  Nobody has checked yet. If it does, the fix is a copy in RAM
+  refreshed with the cache off, and the workstation side would not
+  change.
+- **`seq` advances once per change**, not per frame. A pad left alone
+  is not a stalled provider.
+
 ### What none of the drivers does
 
-- **Rumble or LEDs.** All three pass NULL for `req`, so `xpad_req()` returns
-  NULL and neither claims `XPAD_CAP_RUMBLE` or `XPAD_CAP_LED`.
-- **More than two pads**, though the ABI carries four. The keyboard
-  driver publishes one, the joystick and STE drivers two each.
+- **Rumble or LEDs.** All four pass NULL for `req`, so `xpad_req()` returns
+  NULL and none claims `XPAD_CAP_RUMBLE` or `XPAD_CAP_LED`.
 - **Coexist with another provider.** Xpad is single provider, so all
-  three refuse to install when an `XPAD` cookie is already present rather than
+  four refuse to install when an `XPAD` cookie is already present rather than
   displace something better.
+
+The keyboard driver publishes one pad, the joystick and STE drivers two
+each, and the DevOps driver four, the most the ABI carries.
 
 ### Where they have been tested
 
-All three run self tests under Hatari, the STE driver on an emulated
+All four run self tests under Hatari, the STE driver on an emulated
 STE and Mega STE. The joystick and keyboard drivers are additionally
 exercised end to end: installed resident from `AUTO`, then read by a
 separate program through the cookie jar.
+
+The DevOps driver's self test reads an image of the area that
+`xpaddev.py` wrote, so the ST's own consumer code checks the
+workstation's bytes, and `test/devops.py` checks the tool on the host,
+over HTTP against a stand-in for md-devops. What the harness cannot do
+is attach a cartridge: Hatari turns its cartridge off for the GEMDOS
+drive the harness uses, and its `--auto` replaces it. So the path
+through a real cartridge, from `AUTO` to a separate consumer, has been
+run by hand once, from a floppy with a cartridge image, and is not
+part of `verify.sh`.
 
 **None has been run on real hardware.** That is the distance between
 "passes its tests" and "works", and it is worth closing before trusting

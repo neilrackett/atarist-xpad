@@ -13,12 +13,14 @@
 # not run inside it. The individual targets, when you want just one:
 #
 #   make                               host tests, no toolchain
+#   make test-devops                   the DevOps workstation tool, Python
 #   STCMD_NO_TTY=1 stcmd make check    compile for the ST, warnings fatal
 #   STCMD_NO_TTY=1 stcmd make st       link everything that runs on an ST
 #   make hatari                        ABI assertions on an emulated ST
 #   make hatari-joystick               joystick driver self test
 #   make hatari-keyboard               keyboard driver self test
 #   make hatari-stepad                 STE joypad driver self test
+#   make hatari-devops                 DevOps driver against the tool's image
 #   make hatari-view                   viewer against its demo provider
 #   make hatari-integration            drivers from AUTO, viewer reads them
 #
@@ -52,7 +54,7 @@ TOOLS       = $(SRC)/tools
 # one a newcomer or a pre-commit hook can actually run.
 .DEFAULT_GOAL := test
 
-.PHONY: all check test inc inc-check examples st hatari hatari-joystick hatari-keyboard hatari-stepad hatari-view hatari-emu hatari-integration drivers tools clean
+.PHONY: all check test test-devops inc inc-check examples st hatari hatari-joystick hatari-keyboard hatari-stepad hatari-devops hatari-view hatari-emu hatari-integration drivers tools clean
 
 all: check test
 
@@ -98,6 +100,9 @@ test: | $(BUILD)
 	@echo
 	$(HOSTCC) $(HOSTCFLAGS) test/stepad.c -o $(BUILD)/stepad
 	@$(BUILD)/stepad
+	@echo
+	$(HOSTCC) $(HOSTCFLAGS) test/devops.c -o $(BUILD)/devops
+	@$(BUILD)/devops
 	@echo
 	$(HOSTCC) $(HOSTCFLAGS) test/viewkeys.c -o $(BUILD)/viewkeys
 	@$(BUILD)/viewkeys
@@ -174,6 +179,23 @@ $(DIST)/XPADSTE.PRG: $(STEDEP) | $(DIST)
 $(BUILD)/STETEST.TOS: $(STEDEP) | $(BUILD)
 	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(STESRC) -o $@
 
+# The DevOps driver only points the cookie at a block the workstation
+# keeps in the cartridge, so it has no hook and no trampoline.
+DEVDIR = $(DRIVERS)/devops
+DEVSRC = $(DEVDIR)/devops.c $(SRC)/xpad.c $(SRC)/xpad_provider.c
+DEVDEP = $(DEVSRC) $(DEVDIR)/locate.h $(SRC)/xpad.h
+
+$(DIST)/XPADDEV.PRG: $(DEVDEP) | $(DIST)
+	$(CC) $(CFLAGS) $(DEVSRC) -o $@
+
+$(BUILD)/DEVTEST.TOS: $(DEVDEP) | $(BUILD)
+	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(DEVSRC) -o $@
+
+# Its workstation half is Python, so its tests are kept out of the
+# default goal, which needs nothing but a compiler.
+test-devops:
+	@python3 test/devops.py
+
 # Standalone programs that link the core but are not part of it.
 VIEWSRC = $(TOOLS)/xpadview.c $(SRC)/xpad.c $(SRC)/xpad_provider.c
 VIEWDEP = $(VIEWSRC) $(SRC)/xpad.h
@@ -203,17 +225,19 @@ $(DIST)/XPADEMU.CFG: $(TOOLS)/XPADEMU.CFG | $(DIST)
 tools: $(DIST)/XPADVIEW.PRG $(DIST)/XPADEMU.PRG $(DIST)/XPADEMU.CFG
 	@echo "built XPADVIEW.PRG and XPADEMU.PRG in $(DIST)"
 
-drivers: $(DIST)/XPADJOY.PRG $(DIST)/XPADKEY.PRG $(DIST)/XPADSTE.PRG
-	@echo "built XPADJOY.PRG, XPADKEY.PRG and XPADSTE.PRG in $(DIST)"
+drivers: $(DIST)/XPADJOY.PRG $(DIST)/XPADKEY.PRG $(DIST)/XPADSTE.PRG \
+         $(DIST)/XPADDEV.PRG
+	@echo "built XPADJOY.PRG, XPADKEY.PRG, XPADSTE.PRG and XPADDEV.PRG in $(DIST)"
 
 st: $(BUILD)/ABI.TOS $(DIST)/XPADJOY.PRG $(BUILD)/JOYTEST.TOS \
     $(DIST)/XPADKEY.PRG $(BUILD)/KEYTEST.TOS \
     $(DIST)/XPADSTE.PRG $(BUILD)/STETEST.TOS \
+    $(DIST)/XPADDEV.PRG $(BUILD)/DEVTEST.TOS \
     $(DIST)/XPADVIEW.PRG $(BUILD)/VIEWTEST.TOS \
     $(DIST)/XPADEMU.PRG $(DIST)/XPADEMU.CFG $(BUILD)/EMUTEST.TOS
 	@echo "built the programs into $(DIST) and the self tests into $(BUILD)"
 	@echo "run: make hatari / hatari-joystick / hatari-keyboard"
-	@echo "     make hatari-stepad / hatari-view"
+	@echo "     make hatari-stepad / hatari-devops / hatari-view"
 
 # Runs on the host, not in the container, since that is where Hatari is.
 hatari:
@@ -234,6 +258,17 @@ hatari-keyboard:
 # gate does refuse there is worth checking too, so run it both ways.
 hatari-stepad:
 	@MACHINE=ste python3 test/run-hatari.py $(BUILD)/STETEST.TOS
+
+# The DevOps driver's self test reads an image of the area that
+# xpaddev.py made, so the ST's own consumer code checks the tool's bytes.
+# Made here on the host, since the tool is Python and the container is
+# not promised to have it. The state set is what devops.c expects.
+hatari-devops: | $(BUILD)
+	@rm -f $(BUILD)/DEVOPS.IMG
+	@python3 $(DEVDIR)/xpaddev.py --file $(BUILD)/DEVOPS.IMG init
+	@python3 $(DEVDIR)/xpaddev.py --file $(BUILD)/DEVOPS.IMG \
+	    set --pad 1 south start --lx 100 --ly -20 --lt 255
+	@FILES=$(BUILD)/DEVOPS.IMG python3 test/run-hatari.py $(BUILD)/DEVTEST.TOS
 
 # The viewer against its own demo provider: publishes a block, finds it
 # through the cookie, reads it back and prints one frame.

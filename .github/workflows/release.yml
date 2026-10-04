@@ -69,6 +69,10 @@ jobs:
         # stale .inc files to assembly consumers.
         run: make
 
+      - name: DevOps workstation tool
+        # Python, so not part of the default goal above.
+        run: make test-devops
+
       - name: Install the Atari ST toolkit
         run: curl -sL https://github.com/sidecartridge/atarist-toolkit-docker/releases/latest/download/install_atarist_toolkit_docker.sh | bash
 

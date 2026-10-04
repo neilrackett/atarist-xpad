@@ -12,7 +12,8 @@ program returns, so the program prints a final "XPAD-DONE <rc>" line.
 This waits for that, stops the emulator, and exits with the same code.
 
 Override the emulator, TOS image and machine with $HATARI, $TOS and
-$MACHINE if the guesses below are wrong.
+$MACHINE if the guesses below are wrong. $FILES names data files, space
+separated, to put on drive C beside the program.
 """
 
 import os
@@ -96,6 +97,13 @@ def main():
     with tempfile.TemporaryDirectory() as drive_c:
         name = os.path.basename(program).upper()
         shutil.copy(program, os.path.join(drive_c, name))
+
+        # Whatever the program reads, such as the DevOps driver's image.
+        for extra in os.environ.get("FILES", "").split():
+            if not os.path.isfile(extra):
+                sys.exit("no such file: %s" % extra)
+            shutil.copy(extra, os.path.join(drive_c,
+                                            os.path.basename(extra).upper()))
 
         if auto_first:
             if not os.path.isfile(auto_first):

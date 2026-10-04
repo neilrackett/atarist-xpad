@@ -28,6 +28,9 @@ src/xpad_provider.c provider half: own a block and publish it
 src/drivers/joystick  example provider: both joystick ports as two pads
 src/drivers/keyboard  example provider: DOOM controls as one pad
 src/drivers/stepad    example provider: the STE's enhanced ports
+src/drivers/devops    example provider: pads from the workstation,
+                      through md-devops' rom4 area; xpaddev.py is its
+                      workstation half
 src/tools/xpadview.c  live viewer, and the reference consumer
 src/tools/viewkeys.h  what a keypress means to it: TOS-free, host tested
 src/tools/xpademu.c   resident consumer: any provider as joystick 1 and mouse
@@ -37,6 +40,8 @@ test/abi.c          ABI assertions, mostly static; host and ST builds
 test/joystick.c     IKBD translation tests, host only
 test/keyboard.c     keymap tests, host only
 test/stepad.c       STE matrix decode tests, host only
+test/devops.c       DevOps area location tests, host only
+test/devops.py      DevOps workstation tool tests, host Python
 test/viewkeys.c     viewer key tests, host only
 test/joypkt.c       IKBD packet tests, host only
 test/mint/osbind.h  host stand-in for <mint/osbind.h>
@@ -83,12 +88,14 @@ stopping at the first. The individual targets, when you want one:
 
 ```
 make                               host tests, no toolchain
+make test-devops                   DevOps workstation tool, Python
 STCMD_NO_TTY=1 stcmd make check    compile for the ST, warnings fatal
 STCMD_NO_TTY=1 stcmd make st       link everything that runs on an ST
 make hatari                        ABI assertions on an emulated ST
 make hatari-joystick               joystick driver self test
 make hatari-keyboard               keyboard driver self test
 make hatari-stepad                 STE joypad self test, on an emulated STE
+make hatari-devops                 DevOps driver against the tool's image
 make hatari-view                   viewer against its demo provider
 make hatari-emu                    joystick and mouse injection self test
 make hatari-integration            drivers from AUTO, viewer reads them
@@ -100,7 +107,8 @@ straddled by a script instead, the way md-sidepad's `build.sh` does it.
 `verify.sh` refuses to run under `stcmd` for that reason.
 
 **CI covers two of the three legs.** `.github/workflows/pr.yml` runs
-`make`, `stcmd make check` and `stcmd make st` on every pull request,
+`make`, `make test-devops`, `stcmd make check` and `stcmd make st` on
+every pull request,
 and `release.yml` runs the same before publishing. Neither runs
 `make hatari*`: a runner has no TOS image and no emulator, and the
 emulated tests are the ones that prove residency, the cookie jar and
@@ -322,6 +330,25 @@ Listed so they do not get helpfully undone:
 - A driver must always chain to the handler it displaced. One that
   swallows packets breaks the desktop and every existing game, so both
   driver self tests check for it explicitly.
+- The DevOps driver refuses an area with no valid block rather than
+  publish a cookie pointing at one that may arrive later. Consumers
+  call `xpad_find()` once and cache the answer, and XPADEMU refuses to
+  install without a provider, so a cookie published early helps nobody
+  and makes the failure quieter. `xpaddev.py init` before the ST boots
+  is the documented order.
+- The DevOps driver leaves nothing resident. The block is in the
+  cartridge and the ST cannot write it, so there is nothing to keep
+  alive; `xpaddev.py` is the provider's other half and does every
+  commit. If the Mega STE cache turns out to serve stale cartridge
+  reads, the fix is a resident copy in RAM refreshed with the cache
+  off, and the tool and the block format stay as they are.
+- `hatari-devops` cannot use a cartridge. Hatari disables its cartridge
+  while a GEMDOS drive is emulated, which is how the harness supplies
+  drive C, and `--auto` replaces the cartridge as well. So the self
+  test runs `install()` against a slot table and an image in RAM, and
+  the real cartridge path is checked by hand: a floppy with
+  `AUTO\XPADDEV.PRG` and the viewer, a 64 KB cartridge image with the
+  three slots at `$2860` and the area at `$8B00`, no `--auto`.
 - `xpad_fold_stick()` uses a radial deadzone, three word multiplies,
   which is acceptable at VBL rate. Do not "optimise" it into a box test:
   a box test rejects diagonals whose magnitude clears the threshold, so

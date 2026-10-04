@@ -46,6 +46,11 @@ jobs:
         # here rather than by an assembly consumer months later.
         run: make
 
+      - name: DevOps workstation tool
+        # Python rather than C, so it is kept out of the default goal,
+        # which needs only a compiler. A runner has Python anyway.
+        run: make test-devops
+
       - name: Install the Atari ST toolkit
         # Generates /usr/local/bin/stcmd, which runs the m68k build in a
         # container. The installer picks the image for the runner's
