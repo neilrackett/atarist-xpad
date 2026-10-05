@@ -30,11 +30,14 @@
 #define XPAD_DEVOPS_MAGIC 0x52344131UL /* 'R4A1'                       */
 
 /*
- * How much of the area xpaddev.py uses: the block with room for every
- * pad, then a 32 byte provider string. SPAN in xpaddev.py says the
+ * What xpaddev.py lays down from the start of the area: the block with
+ * room for every pad, then the provider string. xpaddev.py says the
  * same, and test/devops.py holds the two together.
  */
-#define XPAD_DEVOPS_SPAN 160
+#define XPAD_DEVOPS_PROVIDER_OFFSET 0x80
+#define XPAD_DEVOPS_PROVIDER_SIZE 32
+#define XPAD_DEVOPS_PROVIDER "DevOps workstation"
+#define XPAD_DEVOPS_SPAN (XPAD_DEVOPS_PROVIDER_OFFSET + XPAD_DEVOPS_PROVIDER_SIZE)
 
 #define XPAD_DEVOPS_FOUND 0
 #define XPAD_DEVOPS_NO_AREA 1   /* no md-devops, or one without rom4 */

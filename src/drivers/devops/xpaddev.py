@@ -57,7 +57,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, replace
+from dataclasses import astuple, dataclass, replace
 
 # ------------------------------------------------------------------ #
 # From src/xpad.h. test/devops.py checks every one against the header.
@@ -156,8 +156,7 @@ class Pad:
     flags: int = 0
 
     def pack(self):
-        return PAD.pack(self.buttons, self.lx, self.ly, self.rx, self.ry,
-                        self.lt, self.rt, self.type, self.flags)
+        return PAD.pack(*astuple(self))
 
 
 CONNECTED = {"type": XPAD_TYPE_GAMEPAD, "flags": XPAD_PAD_ANALOG}
@@ -244,7 +243,7 @@ class HttpArea:
             detail = exc.read().decode("utf-8", "replace").strip()
             raise Failure("%s %s answered %d %s"
                           % (method, path, exc.code, detail))
-        except (urllib.error.URLError, OSError) as exc:
+        except OSError as exc:  # URLError is one
             raise Failure("cannot reach %s: %s"
                           % (self.base, getattr(exc, "reason", exc)))
 
@@ -298,7 +297,6 @@ class Block:
 
     def __init__(self, area):
         self.area = area
-        self.known = False
         self.seq = 0
         self.active = 0
         self.pads = []
@@ -310,7 +308,6 @@ class Block:
         self.active = 0
         self.pads = [Pad(**CONNECTED)]
         self.pads += [Pad() for _ in range(PAD_COUNT - 1)]
-        self.known = True
 
         pads = b"".join(p.pack() for p in self.pads)
         header = struct.pack(">HHHHHHBBII", XPAD_VERSION, HDR_SIZE,
@@ -329,7 +326,7 @@ class Block:
         return address
 
     def load(self):
-        if self.known:
+        if self.pads:  # init or an earlier load already has it
             return
 
         data = self.area.read()
@@ -347,7 +344,6 @@ class Block:
         self.active = active
         self.pads = [Pad(*PAD.unpack_from(data, front + i * PAD.size))
                      for i in range(PAD_COUNT)]
-        self.known = True
 
     def commit(self):
         """xpad_commit(): the back buffer, then seq, then active.

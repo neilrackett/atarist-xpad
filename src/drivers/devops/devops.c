@@ -48,7 +48,7 @@ static int install(const volatile uint32_t *where)
 {
     uint32_t slots[3];
     uint32_t addr;
-    const XPAD *x;
+    XPAD *x;
 
     /* Xpad is single provider and the last one to publish wins, so a
      * driver must not displace something better. */
@@ -78,7 +78,7 @@ static int install(const volatile uint32_t *where)
         return 0;
     }
 
-    x = (const XPAD *)addr;
+    x = (XPAD *)addr;
 
     if (!xpad_valid(x))
     {
@@ -88,7 +88,7 @@ static int install(const volatile uint32_t *where)
         return 0;
     }
 
-    if (!xpad_publish((XPAD *)x))
+    if (!xpad_publish(x))
     {
         printf("Could not install the XPAD cookie. Is the jar full?\n");
         return 0;
@@ -123,8 +123,6 @@ static int install(const volatile uint32_t *where)
 
 /* The address the image's pointers were made for: md-devops' area. */
 #define IMAGE_ADDRESS 0xFA8B00UL
-#define PROVIDER_OFFSET 0x80
-#define PROVIDER "DevOps workstation"
 
 /* Word arrays, so both areas sit at an even address as the real one
  * does. */
@@ -203,9 +201,10 @@ static int selftest(void)
           "analogue and hotplug, nothing else");
     check(x->req == 0, "no request area");
     check(x->seq == 1 && x->active == 1, "one commit after init");
-    check((uint32_t)x->provider == IMAGE_ADDRESS + PROVIDER_OFFSET,
+    check((uint32_t)x->provider == IMAGE_ADDRESS + XPAD_DEVOPS_PROVIDER_OFFSET,
           "the provider points past the block");
-    check(strcmp((const char *)area + PROVIDER_OFFSET, PROVIDER) == 0,
+    check(strcmp((const char *)area + XPAD_DEVOPS_PROVIDER_OFFSET,
+                 XPAD_DEVOPS_PROVIDER) == 0,
           "and names the workstation");
 
     check(xpad_read(x, 0, &pad) && pad.type == XPAD_TYPE_GAMEPAD &&

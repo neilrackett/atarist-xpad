@@ -69,6 +69,13 @@ def find_tos():
     return None
 
 
+def copy_in(path, folder):
+    """Copy path into folder under the upper-case name GEMDOS expects."""
+    name = os.path.basename(path).upper()
+    shutil.copy(path, os.path.join(folder, name))
+    return name
+
+
 def main():
     if len(sys.argv) not in (2, 3):
         sys.exit("usage: run-hatari.py <program.tos> [auto-program]")
@@ -95,24 +102,20 @@ def main():
     # Drive C holds only the program: GEMDOS filenames are 8.3, and an
     # unrelated file with a long name would draw a warning per boot.
     with tempfile.TemporaryDirectory() as drive_c:
-        name = os.path.basename(program).upper()
-        shutil.copy(program, os.path.join(drive_c, name))
+        name = copy_in(program, drive_c)
 
         # Whatever the program reads, such as the DevOps driver's image.
         for extra in os.environ.get("FILES", "").split():
             if not os.path.isfile(extra):
                 sys.exit("no such file: %s" % extra)
-            shutil.copy(extra, os.path.join(drive_c,
-                                            os.path.basename(extra).upper()))
+            copy_in(extra, drive_c)
 
         if auto_first:
             if not os.path.isfile(auto_first):
                 sys.exit("no such program: %s" % auto_first)
             auto_dir = os.path.join(drive_c, "AUTO")
             os.mkdir(auto_dir)
-            shutil.copy(auto_first,
-                        os.path.join(auto_dir,
-                                     os.path.basename(auto_first).upper()))
+            copy_in(auto_first, auto_dir)
 
         cmd = [
             hatari,

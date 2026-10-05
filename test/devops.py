@@ -114,8 +114,17 @@ def test_constants():
           "every button bit matches xpad.h")
     check(len(xd.BUTTONS) == 17, "every button xpad.h defines is named")
 
-    check(xd.SPAN == locate["XPAD_DEVOPS_SPAN"],
-          "the span matches locate.h")
+    check(xd.PROVIDER_OFFSET == locate["XPAD_DEVOPS_PROVIDER_OFFSET"] and
+          xd.PROVIDER_SIZE == locate["XPAD_DEVOPS_PROVIDER_SIZE"],
+          "the provider's place matches locate.h")
+    check(xd.SPAN == xd.PROVIDER_OFFSET + xd.PROVIDER_SIZE,
+          "the span is the block's room plus the name")
+    with open(os.path.join(DEVOPS, "locate.h")) as f:
+        name = re.search(r'#define XPAD_DEVOPS_PROVIDER "([^"]*)"', f.read())
+    check(name is not None and name.group(1).encode() == xd.PROVIDER,
+          "the provider name matches locate.h")
+    check(defines(os.path.join(DEVOPS, "devops.c"))["IMAGE_ADDRESS"] ==
+          xd.ROM4_ADDRESS, "the self test's image address is the tool's")
     check(xd.ROM4_MAGIC == locate["XPAD_DEVOPS_MAGIC"],
           "the rom4 magic matches locate.h")
 
