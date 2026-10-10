@@ -23,6 +23,8 @@ src/xpad.inc        assembler equates, vasm/devpac dialect: GENERATED
 src/xpad_gas.inc    the same for GNU as: GENERATED, do not hand edit
 src/tools/geninc.c  generates both from xpad.h; `make inc`
 examples/asm/       a worked assembly consumer, assembled by `make check`
+examples/xpong/     an example game: Pong, one or two players, rumble
+                    pong.h and rumble.h are TOS-free, host tested
 src/xpad.c          consumer half: find a block and read it
 src/xpad_provider.c provider half: own a block and publish it
 src/drivers/joystick  example provider: both joystick ports as two pads
@@ -44,6 +46,7 @@ test/devops.c       DevOps area location tests, host only
 test/devops.py      DevOps workstation tool tests, host Python
 test/viewkeys.c     viewer key tests, host only
 test/joypkt.c       IKBD packet tests, host only
+test/xpong.c        game rules, computer opponent and rumble, host only
 test/mint/osbind.h  host stand-in for <mint/osbind.h>
 test/run-hatari.py  boots an ST program under Hatari, relays its output
 verify.sh           runs every test, across both toolchains
@@ -98,6 +101,7 @@ make hatari-stepad                 STE joypad self test, on an emulated STE
 make hatari-devops                 DevOps driver against the tool's image
 make hatari-view                   viewer against its demo provider
 make hatari-emu                    joystick and mouse injection self test
+make hatari-xpong                  example game plays a scripted session
 make hatari-integration            drivers from AUTO, viewer reads them
 ```
 
@@ -409,6 +413,37 @@ It cannot reach a game that drives the IKBD ACIA at `$FFFC00` directly.
 That is a property of the hardware, not a gap to close: you cannot
 write to a receive register. Say so rather than implying wider
 coverage.
+
+## The example game
+
+`examples/xpong` is a consumer, and the first thing somebody writing a
+game will copy, so the drivers' rule applies to it too: clarity first,
+and every limitation written down. Four things in it are easy to undo
+by accident:
+
+- **The still picture is redrawn only when `still()` changes.** Anything
+  added to the court or its text must go into `still()`, or it is drawn
+  once and then left stale. Anything that moves every frame belongs in
+  `place_bars()`, drawn with exclusive OR, not in the still picture:
+  otherwise every frame is a full redraw, which is how it ran at half
+  the display's rate before.
+- **Every rumble pulse goes through `rumble.h`**, which is what keeps
+  the promise that no motor is left turning, and `pong_feel()` decides
+  who feels what, so both are host tested. Nothing else in the game
+  writes the request area.
+- **The computer is tuned in `test/xpong.c`.** Change `PONG_CPU_*` and
+  run `make`: it prints how a perfect angles player and a modelled
+  person fare, and fails if the computer becomes unbeatable, a
+  pushover, or gains a shot that cannot be returned. Its aim decides
+  how hard it is far more than its speed does: slowing it alone made
+  no difference to the person.
+- **`XPONG -d` refuses over an installed provider.** Publishing repoints
+  an existing cookie and withdrawing removes it, so a demo run over
+  COMpad would leave COMpad unreachable until a reset.
+
+Rumble lengths are counted in game frames, not `_hz_200` as the viewer
+does, because every frame of a match does the same work. A new still
+picture costs a frame, but that only happens between points.
 
 ## Licensing
 

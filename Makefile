@@ -22,6 +22,7 @@
 #   make hatari-stepad                 STE joypad driver self test
 #   make hatari-devops                 DevOps driver against the tool's image
 #   make hatari-view                   viewer against its demo provider
+#   make hatari-xpong                  the example game plays itself
 #   make hatari-integration            drivers from AUTO, viewer reads them
 #
 
@@ -54,7 +55,7 @@ TOOLS       = $(SRC)/tools
 # one a newcomer or a pre-commit hook can actually run.
 .DEFAULT_GOAL := test
 
-.PHONY: all check test test-devops inc inc-check examples st hatari hatari-joystick hatari-keyboard hatari-stepad hatari-devops hatari-view hatari-emu hatari-integration drivers tools clean
+.PHONY: all check test test-devops inc inc-check examples st hatari hatari-joystick hatari-keyboard hatari-stepad hatari-devops hatari-view hatari-emu hatari-xpong hatari-integration drivers tools games clean
 
 all: check test
 
@@ -109,6 +110,9 @@ test: | $(BUILD)
 	@echo
 	$(HOSTCC) $(HOSTCFLAGS) test/joypkt.c -o $(BUILD)/joypkt
 	@$(BUILD)/joypkt
+	@echo
+	$(HOSTCC) $(HOSTCFLAGS) test/xpong.c -o $(BUILD)/xpong
+	@$(BUILD)/xpong
 	@echo
 	@$(MAKE) --no-print-directory inc-check
 
@@ -225,6 +229,23 @@ $(DIST)/XPADEMU.CFG: $(TOOLS)/XPADEMU.CFG | $(DIST)
 tools: $(DIST)/XPADVIEW.PRG $(DIST)/XPADEMU.PRG $(DIST)/XPADEMU.CFG
 	@echo "built XPADVIEW.PRG and XPADEMU.PRG in $(DIST)"
 
+# An example game. It links the provider half only for its demo
+# provider: a game that just reads pads takes xpad.c alone. .TOS rather
+# than .PRG because it takes the screen over, and the desktop hides the
+# GEM mouse for a TOS program.
+PONGDIR = examples/xpong
+PONGSRC = $(PONGDIR)/xpong.c $(SRC)/xpad.c $(SRC)/xpad_provider.c
+PONGDEP = $(PONGSRC) $(PONGDIR)/pong.h $(PONGDIR)/rumble.h $(SRC)/xpad.h
+
+$(DIST)/XPONG.TOS: $(PONGDEP) | $(DIST)
+	$(CC) $(CFLAGS) $(PONGSRC) -o $@
+
+$(BUILD)/PONGTEST.TOS: $(PONGDEP) | $(BUILD)
+	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(PONGSRC) -o $@
+
+games: $(DIST)/XPONG.TOS
+	@echo "built XPONG.TOS in $(DIST)"
+
 drivers: $(DIST)/XPADJOY.PRG $(DIST)/XPADKEY.PRG $(DIST)/XPADSTE.PRG \
          $(DIST)/XPADDEV.PRG
 	@echo "built XPADJOY.PRG, XPADKEY.PRG, XPADSTE.PRG and XPADDEV.PRG in $(DIST)"
@@ -234,10 +255,12 @@ st: $(BUILD)/ABI.TOS $(DIST)/XPADJOY.PRG $(BUILD)/JOYTEST.TOS \
     $(DIST)/XPADSTE.PRG $(BUILD)/STETEST.TOS \
     $(DIST)/XPADDEV.PRG $(BUILD)/DEVTEST.TOS \
     $(DIST)/XPADVIEW.PRG $(BUILD)/VIEWTEST.TOS \
-    $(DIST)/XPADEMU.PRG $(DIST)/XPADEMU.CFG $(BUILD)/EMUTEST.TOS
+    $(DIST)/XPADEMU.PRG $(DIST)/XPADEMU.CFG $(BUILD)/EMUTEST.TOS \
+    $(DIST)/XPONG.TOS $(BUILD)/PONGTEST.TOS
 	@echo "built the programs into $(DIST) and the self tests into $(BUILD)"
 	@echo "run: make hatari / hatari-joystick / hatari-keyboard"
 	@echo "     make hatari-stepad / hatari-devops / hatari-view"
+	@echo "     make hatari-xpong"
 
 # Runs on the host, not in the container, since that is where Hatari is.
 hatari:
@@ -277,6 +300,12 @@ hatari-view:
 
 hatari-emu:
 	@python3 test/run-hatari.py $(BUILD)/EMUTEST.TOS
+
+# The game against its demo provider: a scripted session through the
+# menus, a two player match and a match against the computer, checking
+# each pad moved its paddle and was rumbled, and every motor stopped.
+hatari-xpong:
+	@python3 test/run-hatari.py $(BUILD)/PONGTEST.TOS
 
 # End to end: a driver installed from AUTO, then a separate program
 # finding it through the cookie jar and reading its pads. This is the

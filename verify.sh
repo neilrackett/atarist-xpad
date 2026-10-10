@@ -76,6 +76,7 @@ if step "link everything that runs on an ST" stcmd make st; then
     step "DevOps driver reads the workstation's block" make hatari-devops
     step "viewer against its demo provider" make hatari-view
     step "joystick and mouse injection" make hatari-emu
+    step "example game plays itself" make hatari-xpong
     step "drivers resident from AUTO, read by another process" \
         make hatari-integration
 else

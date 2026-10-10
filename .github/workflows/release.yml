@@ -154,5 +154,6 @@ jobs:
             dist/XPADVIEW.PRG \
             dist/XPADEMU.PRG \
             dist/XPADEMU.CFG \
+            dist/XPONG.TOS \
             --clobber
           echo "Published $VERSION to the latest release."
