@@ -28,6 +28,7 @@ on:
     # anything else as well, and workflow_dispatch forces one by hand.
     paths-ignore:
       - '**.md'
+      - 'docs/**'
       - 'LICENSE'
   workflow_dispatch:
 

@@ -15,6 +15,13 @@ on:
   pull_request:
     branches:
       - main
+    # Prose and the images that go with it cannot break a build, so a
+    # documentation-only pull request skips this, as release.yml skips
+    # the merge. Touch anything else as well and it runs as normal.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
   workflow_dispatch:
 
 # Read-only: this workflow runs code from a contributor's branch, so it
