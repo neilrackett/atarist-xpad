@@ -321,12 +321,13 @@ static void check_read_bounds(void)
 }
 
 /*
- * README promises that a field added in a later revision reads as zero
- * against an older provider rather than as garbage. That case needs a
- * consumer whose XPAD_PAD has grown past the provider's pad_size, which
- * cannot happen while both are v1, so drive the zero-fill mechanism
- * directly with a short pad instead. A real v1 provider never publishes
- * below XPAD_PAD_SIZE_V1, and xpad_valid() refuses one that does.
+ * The specification promises that a field added in a later revision
+ * reads as zero against an older provider rather than as garbage. That
+ * case needs a consumer whose XPAD_PAD has grown past the provider's
+ * pad_size, which cannot happen while both are v1, so drive the
+ * zero-fill mechanism directly with a short pad instead. A real v1
+ * provider never publishes below XPAD_PAD_SIZE_V1, and xpad_valid()
+ * refuses one that does.
  */
 static void check_read_forward_compat(void)
 {

@@ -168,7 +168,7 @@ static const struct
  * west have no such aliases: XPAD_X is north and XPAD_Y is west,
  * following the kernel, and accepting "x" here would hand people the
  * X/Y trap in a file they cannot see the warning in. See the
- * Conventions section of README.
+ * Conventions section of docs/specification.md.
  */
 static uint32_t parse_buttons(const char *v)
 {

@@ -19,8 +19,8 @@
  *   row 2   keypad 0 8 5 2, plus C on $FF9200
  *   row 3   keypad # 9 6 3, plus Option on $FF9200
  *
- * The keypad columns are sampled and then ignored: see README's
- * "Example drivers" for why they are not mapped.
+ * The keypad columns are sampled and then ignored: see docs/drivers.md
+ * for why they are not mapped.
  */
 
 #ifndef XPAD_STEPAD_DECODE_H
@@ -58,9 +58,9 @@ typedef struct
 /*
  * A, B and C sit in a row on the pad, and Xpad's face buttons are a
  * diamond, so there is no mapping that preserves position the way the
- * X/Y rule in README asks for. This is a convention instead, and it is
- * the conventional one: A is the primary button, so it lands where a
- * modern pad's primary button is.
+ * X/Y rule in docs/specification.md asks for. This is a convention
+ * instead, and it is the conventional one: A is the primary button, so
+ * it lands where a modern pad's primary button is.
  */
 static uint32_t xpad_stepad_decode(const XPAD_STE_SAMPLE *s, int pad)
 {

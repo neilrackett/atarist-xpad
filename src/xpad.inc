@@ -45,7 +45,7 @@ XPAD_PAD_FLAGS           equ     11         ; byte
 XPAD_PAD_SIZE_V1         equ     12         ; floor, never shrinks
 XPAD_MAX_PADS            equ     4
 
-; Buttons. Bit values are frozen; see README.
+; Buttons. Bit values are frozen; see docs/specification.md.
 XPAD_UP                  equ     $1
 XPAD_DOWN                equ     $2
 XPAD_LEFT                equ     $4

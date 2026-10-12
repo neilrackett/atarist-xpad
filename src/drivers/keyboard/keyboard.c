@@ -9,7 +9,7 @@
  * Its counterpart in drivers/joystick is smaller; this one additionally
  * shows tracking held state across separate press and release events,
  * and refusing to install where the machine cannot support it. See
- * "Example drivers" in README for the full list of what it does not do.
+ * docs/drivers.md for the full list of what it does not do.
  *
  * Useful on a machine with no joystick at all, and as something to test
  * a consumer against when no controller is to hand.
@@ -315,8 +315,8 @@ int main(int argc, char **argv)
      * would have passed and then runs the ordinary parsing below, so
      * the only thing the tested binary does differently from the
      * shipped one is where argv came from. Replacing the parsing here
-     * instead, which is what this used to do, left the flags README
-     * documents with no test at all.
+     * instead, which is what this used to do, left the documented flags
+     * with no test at all.
      */
     static char *test_args[] = {"XPADKEY", "-t"};
 

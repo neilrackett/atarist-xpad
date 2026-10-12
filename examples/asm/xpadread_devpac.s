@@ -15,8 +15,8 @@
 ;   per frame: sample, select, copy, recheck BOTH active and seq
 ;
 ; Precomputing is legal because pads_offset, pad_size and pad_count are
-; immutable for the life of a published block. See README, "What a block
-; promises for its lifetime".
+; immutable for the life of a published block. See docs/specification.md,
+; "What a block promises for its lifetime".
 
         include "xpad.inc"
 

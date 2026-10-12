@@ -5,8 +5,7 @@
  * Xpad STE driver: publishes both enhanced joystick ports as two pads.
  *
  * EXAMPLE DRIVER. Written to be read and copied as much as to be used.
- * See "Example drivers" in README for the full list of what it does
- * not do.
+ * See docs/drivers.md for the full list of what it does not do.
  *
  * This is the only driver here that reaches a real gamepad on stock
  * hardware: the STE's 15 pin ports take an Atari Jaguar style pad, so

@@ -465,7 +465,7 @@ def build_parser(script_line=False):
     top = argparse.ArgumentParser(
         prog="xpaddev.py" if not script_line else "run",
         description="Drive Xpad pads on an ST through md-devops' rom4 area.",
-        epilog="See the top of this file, or README's devops section.")
+        epilog="See the top of this file, or docs/drivers.md.")
 
     if not script_line:
         top.add_argument("--host", help="SidecarTridge host[:port]")

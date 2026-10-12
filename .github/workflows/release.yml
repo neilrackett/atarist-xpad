@@ -141,7 +141,7 @@ jobs:
         # of them reads. Not the *TEST.TOS self tests, which exist for
         # the harness rather than for a person, and not the library
         # sources: a consumer takes those through a submodule, which is
-        # what README's integration section tells them to do.
+        # what docs/integrating.md tells them to do.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

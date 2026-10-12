@@ -9,9 +9,9 @@
  *   XPADVIEW -1    print one frame as plain text and exit
  *
  * EXAMPLE CONSUMER, and the reference one: written exactly the way
- * README tells a consumer to write one, so the advice there cannot
- * drift away from something that compiles. Find once, cache the
- * pointer, read per frame.
+ * docs/specification.md tells a consumer to write one, so the advice
+ * there cannot drift away from something that compiles. Find once,
+ * cache the pointer, read per frame.
  *
  * The live display has only been checked at 80 columns, so the 40
  * column layout low resolution gives you is unverified.
@@ -784,8 +784,8 @@ int main(int argc, char **argv)
      * would have passed and then runs the ordinary parsing below, so
      * the only thing the tested binary does differently from the
      * shipped one is where argv came from. Replacing the parsing here
-     * instead, which is what this used to do, left the flags README
-     * documents with no test at all.
+     * instead, which is what this used to do, left the documented flags
+     * with no test at all.
      */
     static char *demo_args[] = {"XPADVIEW", "-d", "-1"};
     static char *live_args[] = {"XPADVIEW", "-1"};

@@ -10,851 +10,190 @@ by [Neil Rackett](https://neilrackett.com/atarist)
 
 ## Introduction
 
-A small, transport-neutral shared state block that exposes every button,
-stick and trigger of a modern gamepad to native ST software. Named after
-the Linux `xpad` driver, whose button naming it follows.
-
-The ST has no way to describe a controller with more than one button.
-`xpad` adds one, without replacing anything: a provider publishes a
-struct, consumers poll it, and neither end needs to know how the other
-works.
-
-## Downloads
-
-Prebuilt drivers and tools, `XPADEMU.CFG` included, and the example
-game are on the
-[latest release](https://github.com/neilrackett/atarist-xpad/releases/tag/latest),
-rebuilt whenever `main` changes. To build them yourself,
-`STCMD_NO_TTY=1 stcmd make st` puts the same files in `dist/`. A port
-that consumes Xpad needs none of them: it takes the sources, as
-[Integrating into a port](#integrating-into-a-port) describes.
-
-## Why a struct rather than a vector
-
-`joyvec` is a callback because the IKBD is event driven. Games poll once
-per frame, so a callback only adds indirection and re-entrancy hazards.
-A block in RAM, refreshed by whoever owns the hardware, is simpler at
-both ends and costs a consumer nothing when no provider is present.
-
-## Discovery
-
-The provider installs cookie `XPAD`, whose value is the address of an
-`XPAD` block. A consumer calls `xpad_find()` once at startup:
-
-```c
-const XPAD *pads = xpad_find();     /* NULL when unavailable */
-```
-
-`xpad_find()` validates the magic and the major version, so a consumer
-built against v1 will safely decline a hypothetical v2 provider rather
-than misread it. It also checks that the block's own layout fields
-describe a pad area lying inside the block: `pad_size` is at least the
-v1 pad, and `pads_offset` plus the two buffers fits within `hdr_size`.
-Those are the values `XPAD_PAD_AT()` trusts on every read, so they are
-established once at discovery rather than defended against per frame.
-
-The predicate is available on its own as `xpad_valid()`. A provider
-should run it over a block it has just built, before publishing
-something no consumer would accept.
-
-## Reading
-
-```c
-XPAD_PAD pad;
-
-if (pads && xpad_read(pads, 0, &pad))
-{
-    if (pad.buttons & XPAD_A)     jump();
-    if (pad.buttons & XPAD_RT)    fire();
-    if (pad.buttons & XPAD_LEFT)  walk(-1);
-
-    if (pad.flags & XPAD_PAD_ANALOG)
-        aim(pad.rx, pad.ry);
-}
-else
-{
-    read_ikbd_joystick();           /* fall back, see below */
-}
-```
-
-`xpad_read()` copies rather than handing out a pointer, so the caller
-holds a stable snapshot for the whole frame. It is cheap: twelve bytes
-and two consistency checks.
-
-## Writing
-
-```c
-static XPAD     state;
-static XPAD_REQ req;
-
-xpad_init(&state, 4, XPAD_CAP_ANALOG | XPAD_CAP_RUMBLE,
-          "MD/Sidepad 1.1", &req);
-xpad_publish(&state);
-
-/* once per refresh, typically from a VBL handler */
-{
-    XPAD_PAD *pads = xpad_back(&state);
-
-    pads[0].type    = XPAD_TYPE_XBOX;
-    pads[0].flags   = XPAD_PAD_ANALOG | XPAD_PAD_WIRELESS;
-    pads[0].buttons = translate(raw);
-    pads[0].lx      = raw.lx;
-    pads[0].ly      = raw.ly;
-
-    xpad_fold_stick(&pads[0], raw.lx, raw.ly, 40);
-
-    xpad_commit(&state);
-}
-```
-
-Providers should keep whatever `joyvec` or scancode injection they
-already do running alongside, so existing software is unaffected.
-
-## Publishing and withdrawing
-
-`xpad_publish()` installs the `XPAD` cookie, or repoints it when one is
-already there, and returns 1 on success. It appends at the jar's
-terminator, whose second word is the number of free slots, so it returns
-0 when the jar is full: enlarge the jar first. Call it from a TSR before
-going resident, and keep the block itself resident, since the cookie
-holds its address and consumers read it for the life of the session.
-
-`xpad_unpublish()` removes the cookie, shuffles the entries after it
-down, and returns the freed slot to the terminator's count. A provider
-that installs and removes repeatedly therefore leaves the jar as it
-found it.
-
-Both use `Supexec` internally and are safe to call from user mode.
-
-## Rumble and LEDs
-
-The request area is the one part of the block a consumer writes. It is
-optional: `XPAD.req` is NULL when the provider offers none. Reach it
-through `xpad_req()` rather than through the field:
-
-```c
-XPAD_REQ *req = xpad_req(pads);     /* NULL when unavailable */
-
-if (req && (pads->caps & XPAD_CAP_RUMBLE))
-{
-    req->rumble[0][0] = 200;        /* low frequency motor  */
-    req->rumble[0][1] = 0;          /* high frequency motor */
-    req->seq++;                     /* last, so the provider sees it */
-}
-```
-
-`xpad_req()` returns NULL unless the provider's area is at least as
-large as the consumer's header describes. Without that check a consumer
-built against a later revision would write fields an older provider
-never allocated: the request area is the only direction in this design
-where a consumer can corrupt a provider, so it is the one place worth a
-guard.
-
-A non-NULL return means the memory is there, not that anything acts on
-it. `caps` says what the provider honours. Bump `seq` after writing, and
-last, so a provider that samples the area mid-update still sees a
-consistent set of values on the next pass.
-
-## Tearing
-
-`pads` is double buffered. The provider fills the inactive buffer, then
-bumps `seq` and writes `active`, which is one byte and therefore atomic
-on 68000. A consumer reads `active`, copies, then rechecks `active` and
-`seq`. Two buffers are enough because a consumer that takes longer than
-a refresh interval to copy twelve bytes has larger problems; the recheck
-exists to catch the pathological case rather than the normal one.
-
-A provider must bump `seq` **before** flipping `active`. The consumer's
-recheck relies on that order: flip first and a consumer can accept a
-copy it took across a refresh. `xpad_commit()` does both in the right
-order, so a provider that uses it gets this for free.
-
-The two buffers sit `pad_count * pad_size` apart, not `XPAD_MAX_PADS`
-apart, so a block reporting fewer pads than the maximum leaves the tail
-of the array unused. `XPAD_PAD_AT()` and `xpad_back()` both derive that
-stride, which is what keeps provider and consumer from disagreeing about
-where buffer 1 begins.
-
-Three details a reimplementation needs, which the C expresses only by
-doing them:
-
-- **The initial sample order is free.** Read `seq` then `active`, or
-  `active` then `seq`, whichever suits your registers. The recheck
-  covers both, so neither order can accept a torn copy. `xpad.c` samples
-  `active` first; that is not normative.
-- **Recheck both**, not just `seq`. Rechecking one leaves the other free
-  to have moved.
-- **Retrying is optional.** `xpad_read()` tries three times because a
-  caller asking for a snapshot has no next frame to fall back on. A
-  consumer polling every frame may simply drop a torn read and keep the
-  previous one: the next sample is a frame away, and a retry loop costs
-  worst-case time in exactly the place that can least afford it. Both
-  are conforming.
-
-`active` is **0 or 1, and a provider must write nothing else**. That is
-a promise consumers may rely on, not just a description of current
-providers: it means a branch on zero and a mask by one reach the same
-buffer, so implementations in different languages agree. (`xpad.c`
-masks defensively; skipping the mask is still conforming.)
-
-## What a block promises for its lifetime
-
-`pads_offset`, `pad_size` and `pad_count` are **immutable for the life
-of a published block**. A provider may not re-lay-out a block that is
-already in the jar; a layout change means publishing a new one.
-
-That matters most to consumers on a per-frame budget: it means a pad's
-address can be computed once, at discovery, and used forever after. In
-assembly that turns the per-frame read into a load and a branch with no
-multiply at all, which is strictly better than evaluating
-`XPAD_PAD_AT()` every frame. The C macro's careful 16-bit arithmetic
-exists to avoid a `__mulsi3` libcall; assembly never had that problem
-and should just precompute.
-
-`XPAD_CAP_HOTPLUG` says a pad's **type** may change at runtime. It does
-not license the layout to change.
-
-The cookie's value is stable for the session too, so a consumer may
-cache the block pointer from discovery. A provider going away sets pad
-types to `XPAD_TYPE_NONE`; it does not free the block or clear the
-cookie out from under a consumer holding a pointer.
-
-## Consuming from assembly
-
-`src/xpad.inc` (vasm/devpac) and `src/xpad_gas.inc` (GNU as) carry the
-offsets and constants as equates. Both are **generated from `xpad.h`**
-by `make inc`, and `make test` fails if they drift, so nothing is
-transcribed by eye.
-
-They deliberately stop at `XPAD_HDR_FIXED`. Everything past it holds
-pointers, and nothing an assembly consumer needs lives there: the three
-fields that locate pads are all inside the fixed 18 bytes.
-
-`examples/asm/xpadread.s` is a worked consumer: the jar walk, the
-precompute, and the consistent read, with the reasoning written down.
-`make check` assembles it, so it cannot rot into a comment that merely
-looks like code.
-
-There are deliberately **no callable assembly routines**. A consumer
-with hard register constraints, which describes most reasons to be
-writing assembly at all, is better served by constants and a recipe
-than by a subroutine with a calling convention it has to work around.
-
-Two things worth knowing before you start:
-
-- **Check alignment before the first dereference.** A 68000 bus errors
-  on a word read from an odd address, and a consumer polling from a VBL
-  handler has nowhere to recover to. `xpad_valid()` now tests this, and
-  the example does the same `btst #0` on the cookie value.
-- **Supervisor already?** Then skip `xpad_find()`, which wraps itself in
-  `Supexec`, and walk the jar directly. If you are probing for other
-  cookies as well, walk it once and test each tag as you pass.
-
-## Conventions
-
-Axes are signed `-127..127`, screen oriented: `+x` right, `+y` down.
-Triggers are unsigned `0..255`.
-
-Providers report the **physical position** of a face button, not its
-printed legend, so a Nintendo-style pad still sets `XPAD_SOUTH` for its
-lower face button.
-
-Bit order and legend aliases follow `linux/input-event-codes.h`, so this
-maps one to one onto the kernel's gamepad codes. That includes one trap
-worth knowing: the kernel aliases `BTN_X` to **north** and `BTN_Y` to
-**west**, which is the reverse of a physical Xbox pad and of the W3C
-Gamepad API standard mapping, where index 2 is west and 3 is north.
-`XPAD_X` and `XPAD_Y` reproduce the kernel behaviour faithfully.
-
-Use the positional names in new code. Reach for `XPAD_X` or `XPAD_Y`
-only when you are deliberately mirroring kernel-side definitions, and
-expect to swap them when bridging to anything Gamepad API shaped.
-
-Providers apply a deadzone and fold stick direction into the d-pad bits,
-so a consumer that only wants digital directions can ignore the analogue
-fields entirely. `xpad_fold_stick()` does this with a radial test.
-
-## Forward compatibility
-
-The header carries `hdr_size`, `pads_offset`, `pad_size` and
-`pad_count`, and consumers locate pads through `XPAD_PAD_AT()` rather
-than indexing the array. A later revision can therefore grow `XPAD_PAD`
-or add header fields without breaking binaries already in the wild.
-`xpad_read()` zeroes anything beyond the provider's `pad_size`, so a new
-field reads as zero on an old provider rather than as garbage.
-
-Button bit values are frozen. A later revision adds new buttons at bits
-17 and up and never reorders, renumbers or reuses an existing bit, so an
-unknown button reads as zero on an older provider the same way a new
-field does.
-
-The minor version may change freely. The major version changes only if
-the layout rules above are broken, which is what `xpad_find()` guards
-against.
-
-## Falling back
-
-`xpad` is an enhancement, never a requirement. A port should degrade in
-this order:
-
-1. `xpad`, when a provider is present.
-2. STE enhanced joystick ports, on machines that have them.
-3. Joystick 0 for movement and button 1, with joystick 1's fire bit as
-   button 2. These are the same two physical lines the ST shares between
-   its mouse buttons and joystick fire buttons, so this works either
-   through a mouse-port adapter or through a provider that synthesises
-   the bits in software.
-4. Plain joystick plus keyboard.
-
-A shim that publishes an `XPAD` block populated from steps 2 to 4 lets a
-port implement only step 1 and get the rest for nothing. Three such
-drivers ship here, covering a plain joystick, the keyboard and the STE
-enhanced ports. Step 3's trick of borrowing joystick 1's fire bit as a
-second button is still to write: the joystick driver publishes each
-port as its own pad rather than merging them.
-
-## Example drivers
-
-**The drivers in `src/drivers` are examples.** They exist to be read and
-copied, not because they are the best possible drivers for the hardware
-they touch. Each one shows the whole shape of a provider in as little
-code as possible: publish a block, hook something, fill the back buffer,
-commit. If you are writing a driver for a transport of your own, start
-from whichever is closest and replace the middle.
-
-They are also meant to genuinely work, because an example that does not
-teaches the wrong things. But every one of them is limited, and the
-limits are listed below rather than left for you to discover.
-
-| Name | Description | Device |
-| ---- | ----------- | ------ |
-| [joystick](src/drivers/joystick) | Both joystick ports as two pads, each with a d-pad and one button. | ST, Mega ST, STE, Mega STE, TT, Falcon |
-| [keyboard](src/drivers/keyboard) | The keyboard as one pad, using DOOM's default controls. | All, with TOS 2.0 or later: Mega STE, TT and Falcon ship with it, and an earlier ST or STE can be upgraded to it |
-| [stepad](src/drivers/stepad) | Both enhanced joystick ports as two pads, reading a real Jaguar style gamepad. | STE, Falcon |
-| [devops](src/drivers/devops) | Up to four pads driven from the workstation, for unattended tests and remote play. | Any, with a SidecarTridge Multi-device running md-devops with its rom4 area |
-
-### joystick, via joyvec
-
-Publishes both joystick ports as two pads, each with the d-pad and
-`XPAD_SOUTH`. Works on any ST ever made, which makes it the floor the
-ladder above rests on. Because MD/Sidepad synthesises `joyvec` packets
-to inject a Bluetooth controller, this picks that up too, with no
-change on its side.
-
-It publishes two pads partly because the packet carries both bytes
-anyway, and partly because a single pad provider never exercises the
-buffer stride: the two buffers sit `pad_count` entries apart, so they
-only overlap the declared array when `pad_count` is `XPAD_MAX_PADS`.
-A two pad example is the smallest one that would notice if that ever
-broke.
-
-- **One button.** The IKBD reports a single fire bit per port. This is
-  not a shortcut in the driver; there is no second bit to read.
-- **No analogue.** `XPAD_CAP_ANALOG` is not claimed, and the sticks and
-  triggers read zero.
-- **No presence detection.** An ST cannot tell whether a joystick is
-  plugged in, so both slots always report connected, plugged in or not.
-- **Pad 0 usually sits idle.** Port 0 is normally the mouse, so unless
-  something is driving it, only pad 1 will ever move.
-- **`seq` advances on change**, not per frame, because that is when the
-  IKBD reports. A still joystick is not a stalled provider.
-- **It can be cut out.** A program that installs a `joyvec` handler and
-  does not chain will stop this driver seeing packets. Nothing can be
-  done about that from this side.
-
-### keyboard, via kbdvec
-
-Publishes the keyboard as one pad, using DOOM's default controls: arrows
-to the d-pad, Ctrl to fire, Space to use, Alt to strafe, Shift to run,
-comma and period to the shoulders, Tab to select and Esc to start.
-
-- **Needs TOS 2.0 or later**, and refuses to install below it. Knowing
-  which keys are _held_ needs make and break codes, and only `kbdvec`,
-  four bytes below `Kbdvbase()`, carries releases. Older TOS has no such
-  vector, and reaching them through `ikbdsys` does not work: reading the
-  ACIA data register destroys the status bits, so a driver cannot both
-  look at a byte and let TOS have it. EmuTOS reports 2.06, so testing
-  under an emulator will not warn you about this.
-- **No analogue**, as above.
-- **Five buttons are unmapped**: `XPAD_TL2`, `XPAD_TR2`, `XPAD_MODE`,
-  `XPAD_THUMBL` and `XPAD_THUMBR`. DOOM has no key that means them, and
-  inventing controls would make the example lie about the hardware.
-- **The mapping is fixed.** There is no configuration. Change the table
-  in `keymap.h` and rebuild.
-- **A keyboard is not a pad.** Keyboard matrices limit which
-  combinations of keys register together, so some multi-key holds a game
-  would expect from a controller will not all arrive.
-
-### stepad, via the STE's enhanced ports
-
-Publishes both of an STE's 15 pin enhanced joystick ports as two pads,
-each with the d-pad, three fire buttons and two menu buttons. This is
-the only driver here that reaches a real gamepad on stock hardware: an
-Atari Jaguar style pad plugs straight in, with no adapter, cartridge or
-Bluetooth anywhere.
-
-It is also the only one that polls. Nothing calls a driver when a
-joypad button changes, because the ports are registers rather than an
-interrupt source, so this one hooks `etv_timer` at `$400` rather than
-the VBL, for the reason AGENTS.md gives: a game is far more likely to
-have taken the VBL for itself.
-
-The ports are a scanned matrix. A row is selected by pulling one bit of
-`$FF9202` low and both pads answer at once, pad 0 in the low nibble and
-pad 1 in the high one, with `$FF9200` carrying a fire and a pause line
-per pad. Four rows cover the whole pad. Everything is active low.
-
-- **STE and Falcon only.** A plain ST bus errors on `$FF9200`, so `_MCH`
-  is checked before anything is read and the driver refuses rather than
-  taking the machine down. A TT has no enhanced ports either. Note that
-  `$FF9200` must be read as a **word**: a byte read of it bus errors on
-  STE and Mega STE.
-- **A Mega STE is refused, and the reason is the interesting one.** It
-  is an STE board in a Mega case, and the case has nowhere to plug a
-  joypad in, but the registers are still there: `$FF9200` on a Mega STE
-  reads the motherboard DIP switches in its upper byte. So a driver that
-  gated on the machine *family* would find no bus error, install
-  happily, and publish two pads that could never move. Since Xpad is
-  single provider, that silently idle provider would be sitting where a
-  working one could have been. The gate uses the whole `_MCH` value,
-  because the low word is the sub model: `00010000` is an STE and
-  `00010010` is a Mega STE.
-- **The 12 key keypad is not mapped.** It is sampled, because it shares
-  its rows with the fire line, and then ignored. Xpad v1 has no home for
-  a keypad, new buttons would have to start at bit 17, and deciding to
-  spend twelve of those is not an example's call to make. `decode.h`
-  documents which key sits in which row and column for anyone who wants
-  them.
-- **A row is not a diamond.** A, B and C sit in a row on the pad and
-  Xpad's face buttons are a diamond, so there is no mapping that
-  preserves position the way the X/Y rule above asks for. A goes to
-  `XPAD_SOUTH` because it is the primary button, then B to `XPAD_EAST`
-  and C to `XPAD_WEST`. That is a convention, not a measurement.
-- **No analogue**, as above. The same ports carry paddles at `$FF9211`
-  and up, which would map onto the axes nicely, but a paddle is a
-  different peripheral and belongs in a different example.
-- **No presence detection.** The ports cannot say whether anything is
-  plugged in, so both slots always report connected and an empty port
-  reads as a pad with nothing pressed.
-- **`seq` advances every tick**, not on change, because a poll cannot
-  know a button moved without looking. Unlike the joystick driver, a
-  still pad here still commits.
-
-### devops, from the workstation through md-devops
-
-Publishes up to four pads whose state comes from the workstation, so a
-script can play a game unattended or a person can drive one from across
-the room. It needs a SidecarTridge Multi-device running md-devops with
-its rom4 area: 1 KB of the cartridge window that the workstation writes
-over HTTP and any ST program reads.
-
-It is the only driver here that never reads a controller, and the only
-one that does not stay resident, because the block lives in the
-cartridge. `xpaddev.py`, beside the driver, writes a whole XPAD block
-into the rom4 area and then commits pad state into it the way
-`xpad_commit()` does: back buffer, then `seq`, then `active`, in one
-HTTP request that md-devops applies in that order. The ST cannot write
-the cartridge, so `XPADDEV.PRG` only checks that the block is there and
-points the cookie at it.
-
-```sh
-python3 src/drivers/devops/xpaddev.py init        # once the SidecarTridge is up
-python3 src/drivers/devops/xpaddev.py set south start --lx 100
-python3 src/drivers/devops/xpaddev.py tap --ms 200 east
-python3 src/drivers/devops/xpaddev.py show
-python3 src/drivers/devops/xpaddev.py run steps.txt
-```
-
-`set` holds exactly what it is given and releases everything else on
-that pad; `tap` presses, waits and lets go; `off` disconnects a pad;
-`run` takes the same commands one per line, plus `wait MS`, from a file
-or stdin. Buttons are named by position as in `XPADEMU.CFG`, sticks run
--127 to 127 and triggers 0 to 255, and the left stick is folded into
-the d-pad with the usual radial deadzone. `--host` or `$SIDECART_HOST`
-names the SidecarTridge, as for md-devops' own CLI. The top of
-`xpaddev.py` has the details.
-
-- **Needs md-devops with the rom4 area**, which is proposed to
-  SidecarTridge but not yet in a release. Without it the driver
-  refuses.
-- **Run `init` before the ST boots.** The driver refuses an area with no
-  block in it rather than publish a cookie that points at nothing,
-  because a consumer looks once, at startup, and XPADEMU refuses to
-  install without a provider. The area survives an ST reset, so after a
-  SidecarTridge restart it is `init`, then reset the ST.
-- **No rumble or LEDs.** `req` is NULL: a consumer cannot write a
-  request into a cartridge.
-- **A SidecarTridge restart empties the area**, and a consumer still
-  holding the block then reads four disconnected pads, which is what a
-  provider going away is meant to look like.
-- **Each change is an HTTP request**, so input arrives at network pace,
-  not frame by frame. `run` keeps the block's state itself and spends
-  one request per step.
-- **One writer at a time.** Each `xpaddev.py` assumes it is the only
-  one.
-- **The first 160 bytes of the area are the block's.** Anything else
-  using rom4 has to stay clear of them.
-- **The Mega STE's cache is unknown territory.** md-drives-emulator
-  found that with the cache on a Mega STE answers cartridge reads from
-  the cache, so a consumer polling this block could see a stale pad.
-  Nobody has checked yet. If it does, the fix is a copy in RAM
-  refreshed with the cache off, and the workstation side would not
-  change.
-- **`seq` advances once per change**, not per frame. A pad left alone
-  is not a stalled provider.
-
-### What none of the drivers does
-
-- **Rumble or LEDs.** All four pass NULL for `req`, so `xpad_req()` returns
-  NULL and none claims `XPAD_CAP_RUMBLE` or `XPAD_CAP_LED`.
-- **Coexist with another provider.** Xpad is single provider, so all
-  four refuse to install when an `XPAD` cookie is already present rather than
-  displace something better.
-
-The keyboard driver publishes one pad, the joystick and STE drivers two
-each, and the DevOps driver four, the most the ABI carries.
-
-### Where they have been tested
-
-All four run self tests under Hatari, the STE driver on an emulated
-STE and Mega STE. The joystick and keyboard drivers are additionally
-exercised end to end: installed resident from `AUTO`, then read by a
-separate program through the cookie jar.
-
-The DevOps driver's self test reads an image of the area that
-`xpaddev.py` wrote, so the ST's own consumer code checks the
-workstation's bytes, and `test/devops.py` checks the tool on the host,
-over HTTP against a stand-in for md-devops. What the harness cannot do
-is attach a cartridge: Hatari turns its cartridge off for the GEMDOS
-drive the harness uses, and its `--auto` replaces it. So the path
-through a real cartridge, from `AUTO` to a separate consumer, has been
-run by hand once, from a floppy with a cartridge image, and is not
-part of `verify.sh`.
-
-**None has been run on real hardware.** That is the distance between
-"passes its tests" and "works", and it is worth closing before trusting
-either one in anger.
-
-## Writing your own
-
-The shape is the same whatever the transport:
-
-```c
-static XPAD block;
-
-xpad_init(&block, pad_count, caps, "My provider 1.0", req_or_null);
-xpad_publish(&block);
-
-/* whenever your input source has something new */
-{
-    XPAD_PAD *pads = xpad_back(&block);
-
-    pads[0].type    = XPAD_TYPE_GAMEPAD;
-    pads[0].buttons = translate(whatever);
-
-    xpad_commit(&block);
-}
-```
-
-What the examples are really demonstrating, and what a driver of your
-own should copy:
-
-- **Always chain to the handler you displaced.** One that swallows
-  events breaks the desktop and every existing program. Both drivers do
-  this, and both self tests check for it explicitly.
-- **Keep the translation free of TOS headers**, in its own file, so it
-  can be tested on a host without an emulator. That is where the logic
-  worth getting wrong lives.
-- **Do not claim capabilities you do not honour.** `caps` is a promise
-  to consumers, not a description of ambition.
-- **Reach system variables below `$800` through `Supexec`.** The ST bus
-  errors on user mode access down there, which catches the cookie jar at
-  `$5a0` and vector surgery alike.
-- **Fill the whole pad, or set the unchanging fields once at startup.**
-  The back buffer holds what you wrote two commits ago, not zeroes.
-
-## The joystick and mouse shim
-
-`src/tools/xpademu.c` is the other direction from the drivers, and the
-one most people will actually run. It publishes nothing and owns
-nothing: it reads whatever `XPAD` block is installed and injects real
-IKBD packets, so an unmodified game from 1987 sees a joystick on port 1
-and GEM sees a mouse. Whatever put the block in the jar, a Bluetooth
-pad through COMpad, a Mega Drive pad through MD/Sidepad, an STE joypad,
-the keyboard shim, comes out the far end as input that needs no port at
+The ST's joystick ports know about four directions and one fire button.
+Xpad lets ST software see everything a modern gamepad has instead:
+every button, both analogue sticks and the triggers, for up to four
+pads at once, with rumble too.
+
+It's an open standard rather than a piece of hardware. A provider,
+whatever connects your pads to the ST, publishes their state in a small
+block of memory that it announces through the cookie jar, and games
+read it once a frame. Neither end needs to know how the other works, so
+anything written for Xpad works with every provider, and nothing is
+replaced: your joystick and mouse carry on as before.
+
+It's named after the Linux `xpad` driver, whose button naming it
+follows.
+
+## Providers
+
+To use Xpad, you need a provider: the thing that connects your pads to
+the ST. Only one can be installed at a time.
+
+| Name | What it connects | You'll need |
+| ---- | ---------------- | ----------- |
+| [COMpad](https://github.com/neilrackett/pico-compad) | Up to four Bluetooth gamepads, with analogue sticks and rumble, through the serial port | A Raspberry Pi Pico W and a MAX3232 module |
+| [MD/Sidepad](https://github.com/neilrackett/md-sidepad) | A Bluetooth gamepad, analogue sticks and all, through the cartridge port | A SidecarTridge Multi-device |
+
+There are also four example drivers here. They're written to be read
+and copied by anyone making a provider of their own, but they work too:
+
+| Name | What it connects | File |
+| ---- | ---------------- | ---- |
+| [joystick](src/drivers/joystick) | Both joystick ports as two pads, each with one button, on any ST, STE, TT or Falcon | `XPADJOY.PRG` |
+| [keyboard](src/drivers/keyboard) | The keyboard as one pad, using DOOM's default controls, with TOS 2.0 or later | `XPADKEY.PRG` |
+| [STEpad](src/drivers/stepad) | A Jaguar style pad in each of the enhanced joystick ports of an STE or Falcon | `XPADSTE.PRG` |
+| [DevOps](src/drivers/devops) | Up to four pads driven from your computer, for unattended tests and remote play, through md-devops firmware that's still in beta, so build this one yourself | `XPADDEV.PRG` |
+
+What each driver does, and doesn't, is in
+[docs/drivers.md](docs/drivers.md).
+
+## Installation
+
+1. Download what you need from the
+   [latest release](https://github.com/neilrackett/atarist-xpad/releases/tag/latest),
+   which is rebuilt whenever `main` changes.
+2. Install a provider, following its own instructions, or copy one of
+   the example drivers into the `AUTO` folder of your boot disk.
+3. For games that weren't written for Xpad, copy `XPADEMU.PRG` into
+   `AUTO` **after** the provider, and `XPADEMU.CFG` to the root of your
+   boot drive if you want to change its settings.
+4. Run `XPADVIEW.PRG` to check everything's working.
+
+## Usage
+
+### Playing games
+
+Software written for Xpad reads your pads directly, analogue sticks and
 all.
 
-It installs from `AUTO` after a provider, reads `XPADEMU.CFG` from the
-root of the boot drive if there is one, and stays resident on
-`etv_timer`. The real vectors are left in place, so a physical joystick
-on port 1 keeps working and whichever one you move drives the game.
+For everything else, `XPADEMU.PRG` turns your first pad into a joystick
+in port 1 and its right stick into the mouse, with your real joystick
+and mouse still working alongside. Every button without another job
+fires, west autofires, and clicking the right stick is the left mouse
+button. All of that can be changed in `XPADEMU.CFG`, and
+[docs/xpademu.md](docs/xpademu.md) has every setting.
 
-| Key | Default | Takes |
-| --- | --- | --- |
-| `pad` | `0` | which pad drives joystick 1 |
-| `fire` | *everything spare* | buttons that count as fire |
-| `autofire` | `west` | buttons held for repeating fire |
-| `autorate` | `8` | shots per second, 1 to 25 |
-| `jump` | `none` | a button that reads as up |
-| `mouse` | `on` | `off` disables mouse emulation |
-| `mousepad` | `0` | whose right stick drives the mouse |
-| `left` | `thumbr` | buttons for left click |
-| `right` | *none* | and for right click |
-| `deadzone` | `40` | below this the stick is at rest |
-| `speed` | `24` | pointer movement per unit of deflection |
+### Checking your pads
 
-**Fire is whatever is left over.** Only autofire, jump and the mouse
-buttons have a named job by default, and every other button becomes
-fire, so the pad has no dead ones: whichever you press, it shoots. A
-joystick has one button and a pad has thirteen, so allocating two and
-leaving eleven inert would be the wrong way round. Set `fire` yourself
-and it is taken literally instead. Directions are never handed out as
-fire however it is set, or walking left would shoot.
+`XPADVIEW.PRG` shows every button, stick and trigger on your pads live,
+and tests rumble.
 
-Buttons are named by position, combined with `+`: `south` `east`
-`north` `west` `tl` `tr` `select` `start` `thumbl` `thumbr` `none`,
-with `a` and `b` accepted for south and east. There is deliberately no
-`x` or `y`, because `XPAD_X` is north and `XPAD_Y` is west and a config
-file has nowhere to print the warning `xpad.h` does.
+| Key     | Does                                    |
+| ------- | --------------------------------------- |
+| `1`-`4` | Choose which pad is shown               |
+| `(`     | Rumble the left motor for half a second |
+| `)`     | The same, right motor                   |
+| `*`     | The same, both                          |
+| `Q`     | Quit, and so does Escape                |
 
-The file is read once, at install. The tick runs in interrupt context
-where GEMDOS is not reentrant, so nothing here can be re-read while
-resident.
+The three rumble keys are the top row of the numeric keypad. Run it as
+`XPADVIEW -d` to see it working with a demo provider and no hardware at
+all. There's more in [docs/xpadview.md](docs/xpadview.md).
 
-The mechanism is ported from the assembly injector in
-[MD/Sidepad](https://github.com/neilrackett/md-sidepad), which worked
-it out on real hardware. Three parts of it are not obvious:
+### Xpong
 
-- **The vectors are read live**, out of `KBDVECS`, on every injection.
-  A game installs its own `joyvec` *after* a resident program, so a
-  pointer saved at install time points at whatever the game replaced
-  and the game hears nothing.
-- **The IKBD interrupt is masked** across the call. Driving `joyvec`
-  leaves the ACIA enabled, so a real packet arriving mid-call would
-  re-enter the handler on top of itself.
-- **The `0xFF` header sits at an odd address**, because consumers read
-  a word from header+1 to get both joystick bytes aligned, and a 68000
-  address errors otherwise.
+`XPONG.TOS` is Pong for one player against the computer, two with a pad
+each, or two sharing one pad, left stick against right, with rumble
+wherever your provider offers it. It needs a colour monitor. How to
+play, and what it shows anyone writing a game, is in
+[docs/xpong.md](docs/xpong.md).
 
-Its limit is worth stating plainly: a game that drives the IKBD ACIA at
-`$FFFC00` itself, rather than letting TOS deliver its input, never sees
-any of this. You cannot write to a receive register, so there is no
-software fix for that tier.
+## Using Xpad in your software
 
-On real hardware, driven by a Bluetooth pad through COMpad, the mouse
-and every MD/Sidepad demo work as intended. Most original games tried
-from floppy do not, which is that limit showing: they read the IKBD
-themselves.
+Reading a pad takes two calls: find the block once, at startup, then
+copy a pad each frame.
 
-## The viewer
+```c
+const XPAD *pads = xpad_find();     /* once: NULL with no provider */
+XPAD_PAD pad;
 
-`src/tools/xpadview.c` shows live state for whichever provider is
-installed: one pad at a time. It is also the reference consumer,
-written exactly as this document describes, so the advice above cannot
-drift away from something that compiles.
-
-| Key     | Does                                                      |
-| ------- | --------------------------------------------------------- |
-| `1`-`4` | select which pad is shown                                 |
-| `(`     | rumble the selected pad's left motor for half a second    |
-| `)`     | the same, right motor                                     |
-| `*`     | the same, both                                            |
-| `Q`     | quit, and so does Escape                                  |
-
-The three rumble keys are the keypad's top row, laid out the way the
-motors are. Driving them apart is the point: a pad with one dead motor,
-or a provider that has the pair the wrong way round, feels almost right
-when both go at once.
-
-They are the only thing the viewer writes, and the worked example of
-the request area: set the magnitudes, bump `seq`, then write zeroes
-back half a second later, because the area carries strength and no
-duration. Quitting mid-pulse writes them back too, since a provider
-holds a rumble until something replaces it. Providers that offer no
-request area, which is all of the example drivers, say so on screen
-rather than doing nothing.
-
-Keys are matched on the ASCII byte and on the scancode, so the key with
-`Q` printed on it quits whatever national keyboard table the machine's
-TOS carries.
-
-Run it with `-d` and it publishes a demo provider first, so it works
-with no hardware and nothing else installed. `-1` prints one frame as
-plain text and exits, which is what makes it testable without a person
-watching.
-
-It is idle when nothing changes: each frame compares what the provider
-published with what is on screen and draws nothing if they match.
-Buttons redraw the moment they change. Sticks and triggers redraw at
-most ten times a second, and only the numbers that moved, because a
-real stick at rest jitters by a count or two and the TOS console is
-slow enough for that to matter. Timing comes from the 200 Hz system
-timer, so a rumble pulse is half a second however busy the screen is.
-
-Its limits: the live display has been checked at 80 columns, in an
-emulator and on a Mega STE, but the 40 column layout that low
-resolution gives you is unverified, and buttons are labelled by position rather than by the
-letters printed on a pad, deliberately. See the X/Y trap above.
-
-## The example game
-
-`examples/xpong` is Xpong: Pong for one player against the computer, or
-two against each other, on a pad each or sharing one. It is a port of
-MD/Sidepad's SIDEPONG, which
-hooked the IKBD's joystick and mouse vectors; Xpong reads nothing but
-Xpad, so it plays the same on any provider. Two joysticks through
-`XPADJOY` give two players, the keyboard gives one against the
-computer, and COMpad gives up to four pads with rumble.
-
-| Control        | Does                                                              |
-| -------------- | ----------------------------------------------------------------- |
-| up, down       | move your paddle; an analogue pad uses its left stick, as far as it is pushed |
-| right stick    | sharing a pad, the right player's paddle; north and south without analogue |
-| south, start   | choose on the menus; start pauses a match                         |
-| select         | back: from a match to the menu, from the menu to the desktop      |
-| Escape         | the same as select, which is the way out with a joystick          |
-
-The menu offers three matches: one player against the computer, two
-players with a pad each, and two players sharing one pad, left stick
-against right. Whoever chooses plays on the left. For two players with
-a pad each, the second is whichever other pad presses fire first, so it
-makes no difference which slots the pads landed in. A match pauses
-itself if a player's pad goes away, and stays paused until it is back
-and start is pressed. Every serve starts in the middle of the court.
-
-Sharing a pad without analogue sticks, the left player has the d-pad
-and the right player the north and south face buttons. South is then
-somebody's down button, so only start plays again after a match.
-
-Rumble, where the provider offers it: a tap on the high frequency motor
-when you return the ball, a thump on the low frequency one when you
-lose a point, and both when you lose the match. Each player feels only
-their own events, on their own pad. Sharing a pad, each feels them only
-in their own grip: the left player on the low frequency motor, which is
-the heavy one in the left grip, and the right player on the high
-frequency one in the right.
-
-It is written to be copied, and it shows the parts of a consumer the
-viewer does not:
-
-- **Edge detection.** Xpad deliberately has no helper for it.
-  `read_pads()` keeps last frame's buttons and works out what went
-  down, in a few lines.
-- **Analogue, with a digital fallback.** `pong_pad_speed()` checks
-  `XPAD_PAD_ANALOG` rather than assuming a stick. COMpad reports a plain
-  gamepad until the adapter has described the pad, and the folded d-pad
-  bits keep its stick working until then.
-- **Rumble that always stops.** The request area carries a strength and
-  no duration, so every pulse is a start and a stop. `rumble.h` keeps
-  track of both, for each motor of any number of pads at once, and
-  stops everything on pause and on exit.
-- **A pad going away.** A provider marks it `XPAD_TYPE_NONE`, which is
-  how the game knows to pause.
-
-The rules, in `pong.h`, and the rumble bookkeeping, in `rumble.h`, are
-free of TOS and tested on the host, and so is the decision of who feels
-what. That includes the computer opponent, which is tuned there by
-playing it against itself and against simulated players. A perfect
-player who never misses never concedes a point, so it has no shot that
-cannot be returned, and one who plays the angles usually wins. One
-modelled on a person, who sees the ball a fifth of a second late and
-aims roughly, wins about one match in five.
-
-`XPONG -d` publishes a demo provider and plays a scripted session: the
-menus, a two player match, a pause, a pad going away and coming back, a
-match against the computer, and a match on one shared pad. It then
-checks that each pad, and each stick of the shared one, moved its
-paddle, that each player was rumbled on their own pad or in their own
-grip, that every motor stopped, and that the game kept up with the
-display. `make hatari-xpong` runs it. It refuses when a
-provider is already installed, because publishing over one and then
-withdrawing would leave that provider unreachable until a reset.
-
-It redraws only what changed, for the same reason the viewer does:
-clearing and redrawing the whole screen every frame ran at about half
-the display's rate on an emulated ST. The court and its text are drawn
-again only when they change, and the paddles and the ball are drawn
-with exclusive OR, so they come off again without disturbing what was
-under them.
-
-Its limits: low resolution only, so it needs a colour monitor. The
-computer is tuned against simulated players, not people. The self test
-runs its provider in the same process, and nothing automated can play
-the real game against a driver resident from `AUTO`, since that needs
-somebody on the pad.
-
-## Integrating into a port
-
-**Add this repository as a submodule**, and compile the two or three
-files you need straight out of it:
-
-```
-git submodule add https://github.com/neilrackett/atarist-xpad lib/xpad
+if (pads && xpad_read(pads, 0, &pad))       /* each frame */
+{
+    if (pad.buttons & XPAD_SOUTH)    jump();
+    if (pad.flags & XPAD_PAD_ANALOG) aim(pad.rx, pad.ry);
+}
 ```
 
-Then build `lib/xpad/src/xpad.c` alongside your own sources, with
-`-Ilib/xpad/src`. A consumer needs `xpad.h` and `xpad.c`. A provider
-takes `xpad_provider.c` as well: `xpad.c` is the consumer half, and
-`xpad_provider.c` adds the helpers for owning and publishing a block.
-An assembly consumer wants `xpad.inc` or `xpad_gas.inc` instead, which
-are generated from the header and would be the third and fourth things
-to keep in sync by hand.
+Add this repository to your project as a submodule and build
+`src/xpad.c` alongside your own sources; a provider takes
+`src/xpad_provider.c` as well. You don't need anything from the
+release.
 
-The split is there because there is no section garbage collection on
-`m68k-atari-mint`, so the linker's unit is the object file. A game that
-linked one file with both halves in it would carry the provider helpers
-into every binary without ever calling them: 684 bytes against 1252,
-measured, which is real money on a 512K machine.
+One trap worth knowing straight away: `XPAD_X` is the **north** button
+and `XPAD_Y` the **west**, following the Linux kernel, which is the
+reverse of the letters on an Xbox pad. Use the positional names, such
+as `XPAD_NORTH` and `XPAD_WEST`, in new code.
 
-This README used to say that at around 500 lines these files were not
-worth a submodule. That was true when the ABI was settled and there
-were two files; it stopped being true. A submodule pins an exact commit,
-makes an update a deliberate act with a diff to read, and keeps the
-generated assembler equates matching the header they came from. Copies
-drift silently, and a consumer holding a stale `xpad.h` gets a struct
-layout that still compiles.
+| Read | For |
+| ---- | --- |
+| [Specification](docs/specification.md) | How the block works: discovery, reading, writing, rumble, tearing, conventions and compatibility |
+| [Integrating into a port](docs/integrating.md) | Adding Xpad to your build, falling back when there's no provider, and the licence notice |
+| [Consuming from assembly](docs/assembly.md) | The generated equates, and a worked assembly consumer |
+| [Example drivers](docs/drivers.md) | The four drivers in detail, and writing a provider of your own |
+| [XPADEMU](docs/xpademu.md) | Every setting, how the injection works, and its limits |
+| [XPADVIEW](docs/xpadview.md) | The reference consumer, and how it tests rumble |
+| [Xpong](docs/xpong.md) | Edge detection, analogue with a digital fallback, and rumble that always stops |
 
-Vendoring is still reasonable for a port that is frozen, or one whose
-build genuinely cannot take a submodule. If you do copy, record the
-commit you copied in your own README, and treat `XPAD_VERSION` as the
-thing to check when something behaves oddly.
+## Known limitations
 
-**One trap if you cross-compile through `atarist-toolkit-docker`.**
-`stcmd` runs `docker run -v ${ST_WORKING_FOLDER}:/tmp`, mounting that
-one directory and nothing else, and `ST_WORKING_FOLDER` defaults to the
-current directory. Put the submodule inside whatever gets mounted and
-everything works; put it above, which is what happens when the ST build
-lives in a subdirectory like `target/atarist` and that is the working
-folder, and the compiler cannot see it at all. No `-I` reaches outside
-the mount.
+- Only one provider can be installed at a time, so COMpad, MD/Sidepad
+  and the example drivers are alternatives rather than something to run
+  together. The example drivers refuse to install when one is already
+  there.
+- `XPADEMU.PRG` reaches games through the system joystick and mouse
+  handlers, so games that read the keyboard processor themselves, which
+  includes many original floppy games, won't see your pad. Software
+  written for Xpad is unaffected.
+- None of the example drivers offers rumble. For that you need a
+  provider such as COMpad.
+- The example drivers pass their tests under Hatari, but haven't been
+  run on real hardware yet.
 
-Two ways out. Either mount the repository root, which is what
-atarist-stdl and pico-compad do and why neither hit this; or keep the
-submodule as the source of truth and have the build copy what it needs
-into the mounted directory as a generated artifact. The second is right
-for a project whose ST target is one of several: MD/Lynx does that for
-`xpad.inc` while its RP2040 half includes `xpad.h` from the submodule
-directly.
+## What's next?
 
-Because the licence is BSD-2-Clause, a port that ships a binary must
-reproduce the copyright notice in its accompanying documentation. One
-line in the port's own README or docs covers it:
+- A fallback shim that publishes an Xpad block from joystick 0, with
+  joystick 1's fire button as a second button, and the keyboard, so a
+  game can support Xpad alone and still work on a bare ST.
+- A provider driven by Hatari's emulated joysticks, so Xpad software
+  can be developed without any hardware.
+- More providers: anything that can fill the block, such as a MIDI,
+  parallel port or mouse port adapter, gives every Xpad game support it
+  never had to write.
 
+Think you can help? Got an idea of your own? We'd love to hear from
+you, so why not let me know on [X](https://x.com/neilrackett) or submit
+a PR.
+
+## Building
+
+```bash
+# Host tests: needs nothing but a C compiler
+make
+
+# Everything that runs on an ST, into dist/: needs atarist-toolkit-docker
+STCMD_NO_TTY=1 stcmd make st
+
+# Every test, including the emulated ones: needs Hatari and EmuTOS
+./verify.sh
 ```
-Controller input via Xpad, Copyright (c) 2026 Neil Rackett,
-BSD-2-Clause. See XPAD.TXT.
-```
 
-Easy to overlook, so handle it as part of the initial integration
-rather than at release time.
+The ST programs are built with
+[atarist-toolkit-docker](https://github.com/sidecartridge/atarist-toolkit-docker),
+which provides `stcmd`.
 
-## Naming
+### Layout
 
-Deliberately not named after any one provider. A MIDI or parallel port
-adapter, a mouse-port adapter or any other hardware can fill the
-same block, and software that reads it gains support it never wrote.
-`XPAD.provider` carries a display string if a game wants to report what
-it found.
+| Path            | Contents                                                                 |
+| --------------- | ------------------------------------------------------------------------ |
+| `src/`          | `xpad.h`, `xpad.c` and `xpad_provider.c`: the standard and its reference implementation |
+| `src/drivers/`  | The four example drivers                                                 |
+| `src/tools/`    | `XPADEMU`, `XPADVIEW`, and the generator for the assembler equates       |
+| `examples/`     | A worked assembly consumer, and Xpong                                    |
+| `docs/`         | The specification, and everything else in detail                         |
+| `test/`         | Host tests, and the harness that runs ST programs under Hatari           |
+
+Working practices for contributors are in [AGENTS.md](AGENTS.md).
 
 ## Licence
 
@@ -866,3 +205,5 @@ codebases, which several Atari ST ports are.
 Providers and tools built on Xpad are free to be copyleft. Only this
 header and its reference implementation, which get compiled into other
 people's programs, need to be permissive.
+
+Copyright (c) 2026 Neil Rackett.

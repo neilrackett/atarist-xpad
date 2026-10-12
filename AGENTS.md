@@ -12,8 +12,16 @@ publishes an `XPAD` block via the cookie jar; consumers poll it.
 comes from other people's code depending on the layout being stable.
 Treat `src/xpad.h` as a published ABI, not as source you are free to tidy.
 
-Read `README.md` before making changes. It is the spec; this file only
-covers working practices.
+Read `README.md` and `docs/specification.md` before making changes.
+The specification is the spec, the README is a short overview that
+links into `docs/` for everything else, and this file only covers
+working practices.
+
+**Keep the README short.** It is what somebody reads first, often on a
+phone: an overview, the providers, installation, the tools and where to
+read more, in the house style of the author's other projects. Detail
+belongs in `docs/`, and a new section there is linked from the README
+rather than written into it.
 
 ## Layout
 
@@ -51,7 +59,9 @@ test/mint/osbind.h  host stand-in for <mint/osbind.h>
 test/run-hatari.py  boots an ST program under Hatari, relays its output
 verify.sh           runs every test, across both toolchains
 Makefile            test, check, st and hatari targets
-README.md           the specification
+README.md           overview, providers, tools; links into docs/
+docs/               the specification, integration, assembly, drivers,
+                    XPADEMU, XPADVIEW and Xpong in detail
 LICENSE             BSD-2-Clause
 ```
 
@@ -72,9 +82,9 @@ would drift apart.
 **The drivers are examples first.** They exist so somebody writing a
 provider for their own transport has a complete, working one to copy,
 which means clarity beats cleverness every time, and every limitation
-gets written down rather than left to be discovered. README's "Example
-drivers" section is the list; keep it true. A new driver that is faster
-but harder to read is the wrong trade here.
+gets written down rather than left to be discovered. `docs/drivers.md`
+is the list, with a summary table in the README; keep both true. A new
+driver that is faster but harder to read is the wrong trade here.
 
 ## Building and testing
 
@@ -213,8 +223,9 @@ them without an explicit instruction and a major version bump.
   cannot drift from the consumer side. Do not reintroduce a fixed
   `XPAD_MAX_PADS` stride: the two agree only when `pad_count` happens to
   be `XPAD_MAX_PADS`.
-- **Version policy** is in README's Forward compatibility section. Do not
-  bump the major version without being asked to.
+- **Version policy** is in the Forward compatibility section of
+  `docs/specification.md`. Do not bump the major version without being
+  asked to.
 - **`active` is 0 or 1 and providers must write nothing else.** This is
   now promised to consumers, not merely true of current providers, so
   that a branch on zero and a mask by one reach the same buffer. An
@@ -229,7 +240,7 @@ them without an explicit instruction and a major version bump.
   submodule above the mount is invisible to the cross compiler and no
   `-I` will reach it. This repo builds from its own root so it never
   bites here, but it bites consumers whose ST build lives in a
-  subdirectory, and README's integration section now warns about it.
+  subdirectory, and `docs/integrating.md` now warns about it.
 - **The assembler equates are generated.** Never hand edit `src/*.inc`;
   change `xpad.h` and run `make inc`. `make test` diffs them and fails
   if they are stale, which is the only way they can now go wrong.
@@ -237,8 +248,9 @@ them without an explicit instruction and a major version bump.
 ## The X/Y trap
 
 `XPAD_X` aliases **north** and `XPAD_Y` aliases **west**, following
-`linux/input-event-codes.h`. README's Conventions section explains why,
-and `xpad.h` warns about it at the point of use.
+`linux/input-event-codes.h`. The Conventions section of
+`docs/specification.md` explains why, and `xpad.h` warns about it at
+the point of use.
 
 This is not a bug. Do not "fix" it. Use `XPAD_NORTH` / `XPAD_WEST` in new
 code, and when writing a provider that translates from Gamepad API index

@@ -7,8 +7,8 @@
  * EXAMPLE DRIVER. Written to be read and copied as much as to be used:
  * it is the smallest complete provider, showing the whole shape of one
  * in as little code as possible. Start here if you are writing a driver
- * for a transport of your own. See "Example drivers" in README for the
- * full list of what it does not do.
+ * for a transport of your own. See docs/drivers.md for the full list
+ * of what it does not do.
  *
  * Four directions and one button, which is the whole of what the IKBD
  * reports for a port. It needs no periodic hook at all, because joyvec
@@ -278,8 +278,8 @@ int main(int argc, char **argv)
      * would have passed and then runs the ordinary parsing below, so
      * the only thing the tested binary does differently from the
      * shipped one is where argv came from. Replacing the parsing here
-     * instead, which is what this used to do, left the flags README
-     * documents with no test at all.
+     * instead, which is what this used to do, left the documented flags
+     * with no test at all.
      */
     static char *test_args[] = {"XPADJOY", "-t"};
 

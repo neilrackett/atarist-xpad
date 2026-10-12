@@ -135,7 +135,7 @@ int main(int argc, char **argv)
     def("XPAD_PAD_SIZE_V1", XPAD_PAD_SIZE_V1, "floor, never shrinks");
     def("XPAD_MAX_PADS", XPAD_MAX_PADS, NULL);
 
-    heading("Buttons. Bit values are frozen; see README.");
+    heading("Buttons. Bit values are frozen; see docs/specification.md.");
     defx("XPAD_UP", XPAD_UP, NULL);
     defx("XPAD_DOWN", XPAD_DOWN, NULL);
     defx("XPAD_LEFT", XPAD_LEFT, NULL);
