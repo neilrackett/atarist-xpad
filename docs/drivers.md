@@ -86,9 +86,10 @@ per pad. Four rows cover the whole pad. Everything is active low.
 Publishes joystick 1 as one pad, with its fire as `XPAD_SOUTH` and the
 left mouse button as `XPAD_EAST`. Port 0's fire line is the left mouse
 button, so button 2 is either a mouse in port 0 or a two button
-joystick wired so its second button reaches pin 6 of port 0. It is the
-joystick driver plus one thing, a pad assembled from two vectors, and
-it links that driver's `joyvec.s` and `translate.h` as they are.
+joystick wired so its second button reaches pin 6 of port 0, such as a
+modified Cheetah 125+. It is the joystick driver plus one thing, a pad
+assembled from two vectors, and it links that driver's `joyvec.s` and
+`translate.h` as they are.
 
 The IKBD reports that wire in one of two ways, depending on the mode a
 program has put it in: as the left button of a relative mouse packet,

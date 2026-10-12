@@ -41,7 +41,7 @@ and copied by anyone making a provider of their own, but they work too:
 | Name | What it connects | File |
 | ---- | ---------------- | ---- |
 | [STEpad](src/drivers/stepad) | A Jaguar style pad in each of the enhanced joystick ports of an STE or Falcon | `XPADSTE.PRG` |
-| [joymouse](src/drivers/joymouse) | A joystick in port 1 as one pad, with the left mouse button as its second button, on any ST, STE, TT or Falcon | `XPADJM.PRG` |
+| [joymouse](src/drivers/joymouse) | A joystick in port 1 as one pad, with the left mouse button as its second button, or a two button joystick such as a modified Cheetah 125+, on any ST, STE, TT or Falcon | `XPADJM.PRG` |
 | [joystick](src/drivers/joystick) | Both joystick ports as two pads, each with one button, on any ST, STE, TT or Falcon | `XPADJOY.PRG` |
 | [keyboard](src/drivers/keyboard) | The keyboard as one pad, using DOOM's default controls, with TOS 2.0 or later | `XPADKEY.PRG` |
 | [DevOps](src/drivers/devops) | Up to four pads driven from your computer, for unattended tests and remote play, through md-devops firmware that's still in beta, so build this one yourself | `XPADDEV.PRG` |
