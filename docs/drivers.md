@@ -230,21 +230,22 @@ names the SidecarTridge, as for md-devops' own CLI. The top of
 
 ## What none of the drivers does
 
-- **Rumble or LEDs.** All five pass NULL for `req`, so `xpad_req()` returns
-  NULL and none claims `XPAD_CAP_RUMBLE` or `XPAD_CAP_LED`.
+- **Rumble or LEDs.** All five pass NULL for `req`, so `xpad_req()`
+  returns NULL and none claims `XPAD_CAP_RUMBLE` or `XPAD_CAP_LED`.
 - **Coexist with another provider.** Xpad is single provider, so all
-  five refuse to install when an `XPAD` cookie is already present rather than
-  displace something better.
+  five refuse to install when an `XPAD` cookie is already present
+  rather than displace something better.
 
 The keyboard and joymouse drivers publish one pad each, the joystick
-and STE drivers two each, and the DevOps driver four, the most the ABI carries.
+and STE drivers two each, and the DevOps driver four, the most the ABI
+carries.
 
 ## Where they have been tested
 
 All five run self tests under Hatari, the STE driver on an emulated
 STE and Mega STE. The joystick, joymouse and keyboard drivers are
-additionally exercised end to end: installed resident from `AUTO`, then read by a
-separate program through the cookie jar.
+additionally exercised end to end: installed resident from `AUTO`, then
+read by a separate program through the cookie jar.
 
 The DevOps driver's self test reads an image of the area that
 `xpaddev.py` wrote, so the ST's own consumer code checks the
@@ -285,8 +286,9 @@ What the examples are really demonstrating, and what a driver of your
 own should copy:
 
 - **Always chain to the handler you displaced.** One that swallows
-  events breaks the desktop and every existing program. Both drivers do
-  this, and both self tests check for it explicitly.
+  events breaks the desktop and every existing program. Every driver
+  here that takes a vector does this, and its self test checks for it
+  explicitly.
 - **Keep the translation free of TOS headers**, in its own file, so it
   can be tested on a host without an emulator. That is where the logic
   worth getting wrong lives.

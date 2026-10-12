@@ -126,8 +126,9 @@ straddled by a script instead, the way md-sidepad's `build.sh` does it.
 
 **CI covers two of the three legs.** `.github/workflows/pr.yml` runs
 `make`, `make test-devops`, `stcmd make check` and `stcmd make st` on
-every pull request,
-and `release.yml` runs the same before publishing. Neither runs
+every pull request that touches more than documentation (Markdown,
+`docs/` and `LICENSE`), and `release.yml` runs the same before
+publishing. Neither runs
 `make hatari*`: a runner has no TOS image and no emulator, and the
 emulated tests are the ones that prove residency, the cookie jar and
 the consumer path together. So a green CI means it builds and the pure
@@ -135,7 +136,8 @@ logic holds; **`./verify.sh` locally is still what says it works**, and
 it is still the thing to run before claiming a change is done.
 
 Releases are rolling and automatic: anything landing on `main` that
-touches more than prose gets a **patch** version and replaces the
+touches more than prose (Markdown, `docs/` and `LICENSE`) gets a
+**patch** version and replaces the
 binaries on the `latest` release. That default is deliberate, because
 this repository is primarily an interface and a minor or major bump is
 a statement about `src/xpad.h`. To make one, tag the commit by hand
@@ -167,8 +169,8 @@ catch a 68000-specific mistake for you.
 
 Drivers follow the same split. Anything with logic worth getting wrong
 lives in a TOS-free header the host build tests (`translate.h`,
-`keymap.h`), and whatever needs an ST gets a self test in the program
-itself.
+`combine.h`, `keymap.h`), and whatever needs an ST gets a self test in
+the program itself.
 
 The viewer follows it too, in `viewkeys.h`, and for a sharper reason:
 Hatari's `--auto` takes a path and no arguments, so **nothing automated
@@ -324,10 +326,10 @@ Listed so they do not get helpfully undone:
   reading `XPAD.req` directly.
 - The joystick, joymouse and keyboard drivers need no periodic hook:
   `joyvec`, `mousevec` and `kbdvec` are all called for us when something
-  changes. The STE driver
-  does need one, because its ports are registers and nothing announces a
-  change, so it takes ETV (`$400`) rather than VBL (`$70`): VBL is far
-  more likely to be clobbered by an existing game.
+  changes. The STE driver does need one, because its ports are registers
+  and nothing announces a change, so it takes ETV (`$400`) rather than
+  VBL (`$70`): VBL is far more likely to be clobbered by an existing
+  game.
 - The joymouse driver holds button 2 in **one** variable that both of
   its vectors write, last report wins. It is one wire, port 0's fire
   line, reported as the left button in mouse mode and as joystick 0's
@@ -355,8 +357,10 @@ Listed so they do not get helpfully undone:
   user mode access down there, which is why reading `_sysbase` at
   `$4f2` and the cookie jar at `$5a0` both go through it.
 - A driver must always chain to the handler it displaced. One that
-  swallows packets breaks the desktop and every existing game, so both
-  driver self tests check for it explicitly.
+  swallows packets breaks the desktop and every existing game, so the
+  self test of every driver that takes a vector checks for it
+  explicitly: joystick, joymouse, keyboard and STEpad. The joymouse
+  driver takes two and checks both. DevOps takes none.
 - The DevOps driver refuses an area with no valid block rather than
   publish a cookie pointing at one that may arrive later. Consumers
   call `xpad_find()` once and cache the answer, and XPADEMU refuses to
@@ -500,8 +504,11 @@ file's own SPDX header rather than assuming.
 
 Not yet written, listed so contributions land in the right place:
 
-- **IKBD fallback shim**: publishes an `XPAD` block synthesised from
-  joystick 0, joystick 1's fire bit as a second button, and the keyboard.
-  Lets a port implement only the xpad path and still work on a bare ST.
+- **IKBD fallback shim**: one provider doing what the joymouse and
+  keyboard drivers do separately, a joystick with a mouse button as its
+  second button and the keyboard, in one `XPAD` block. Lets a port
+  implement only the xpad path and still work on a bare ST. The
+  joymouse driver is the first half, with the ports the other way round
+  from the original plan so the mouse can stay plugged in.
 - **Hatari stub provider**: driven by emulated joysticks, so the spec can
   be developed against without hardware.

@@ -58,7 +58,9 @@ What each driver does, and doesn't, is in
    the example drivers into the `AUTO` folder of your boot disk.
 3. For games that weren't written for Xpad, copy `XPADEMU.PRG` into
    `AUTO` **after** the provider, and `XPADEMU.CFG` to the root of your
-   boot drive if you want to change its settings.
+   boot drive if you want to change its settings. Skip this with the
+   joymouse driver: its joystick and mouse already reach games directly,
+   and the two together make its second button fire as well.
 4. Run `XPADVIEW.PRG` to check everything's working.
 
 ## Usage
@@ -153,9 +155,9 @@ as `XPAD_NORTH` and `XPAD_WEST`, in new code.
 
 ## What's next?
 
-- A fallback shim that publishes an Xpad block from joystick 0, with
-  joystick 1's fire button as a second button, and the keyboard, so a
-  game can support Xpad alone and still work on a bare ST.
+- A fallback shim that does what the joymouse and keyboard drivers do
+  in one, so a game can support Xpad alone and still work on a bare ST
+  with a joystick, a mouse button and the keyboard.
 - A provider driven by Hatari's emulated joysticks, so Xpad software
   can be developed without any hardware.
 - More providers: anything that can fill the block, such as a MIDI,
@@ -188,7 +190,7 @@ which provides `stcmd`.
 | Path            | Contents                                                                 |
 | --------------- | ------------------------------------------------------------------------ |
 | `src/`          | `xpad.h`, `xpad.c` and `xpad_provider.c`: the standard and its reference implementation |
-| `src/drivers/`  | The four example drivers                                                 |
+| `src/drivers/`  | The five example drivers                                                 |
 | `src/tools/`    | `XPADEMU`, `XPADVIEW`, and the generator for the assembler equates       |
 | `examples/`     | A worked assembly consumer, and Xpong                                    |
 | `docs/`         | The specification, and everything else in detail                         |

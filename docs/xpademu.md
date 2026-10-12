@@ -82,3 +82,10 @@ On real hardware, driven by a Bluetooth pad through COMpad, the mouse
 and every MD/Sidepad demo work as intended. Most original games tried
 from floppy do not, which is that limit showing: they read the IKBD
 themselves.
+
+It is not for use with the
+[joymouse driver](drivers.md#joymouse-via-joyvec-and-mousevec). It adds
+nothing there, since that driver's joystick and mouse button already
+reach a game directly, and the joystick packets it injects come back
+through that driver: button 2 becomes fire as well, and can stay down
+after it is released.
