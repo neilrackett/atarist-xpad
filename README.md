@@ -35,12 +35,13 @@ the ST. Only one can be installed at a time.
 | [COMpad](https://github.com/neilrackett/pico-compad) | Up to four Bluetooth gamepads, with analogue sticks and rumble, through the serial port | A Raspberry Pi Pico W and a MAX3232 module |
 | [MD/Sidepad](https://github.com/neilrackett/md-sidepad) | A Bluetooth gamepad, analogue sticks and all, through the cartridge port | A SidecarTridge Multi-device |
 
-There are also four example drivers here. They're written to be read
+There are also five example drivers here. They're written to be read
 and copied by anyone making a provider of their own, but they work too:
 
 | Name | What it connects | File |
 | ---- | ---------------- | ---- |
 | [STEpad](src/drivers/stepad) | A Jaguar style pad in each of the enhanced joystick ports of an STE or Falcon | `XPADSTE.PRG` |
+| [joymouse](src/drivers/joymouse) | A joystick in port 1 as one pad, with the left mouse button as its second button, on any ST, STE, TT or Falcon | `XPADJM.PRG` |
 | [joystick](src/drivers/joystick) | Both joystick ports as two pads, each with one button, on any ST, STE, TT or Falcon | `XPADJOY.PRG` |
 | [keyboard](src/drivers/keyboard) | The keyboard as one pad, using DOOM's default controls, with TOS 2.0 or later | `XPADKEY.PRG` |
 | [DevOps](src/drivers/devops) | Up to four pads driven from your computer, for unattended tests and remote play, through md-devops firmware that's still in beta, so build this one yourself | `XPADDEV.PRG` |
@@ -130,7 +131,7 @@ as `XPAD_NORTH` and `XPAD_WEST`, in new code.
 | [Specification](docs/specification.md) | How the block works: discovery, reading, writing, rumble, tearing, conventions and compatibility |
 | [Integrating into a port](docs/integrating.md) | Adding Xpad to your build, falling back when there's no provider, and the licence notice |
 | [Consuming from assembly](docs/assembly.md) | The generated equates, and a worked assembly consumer |
-| [Example drivers](docs/drivers.md) | The four drivers in detail, and writing a provider of your own |
+| [Example drivers](docs/drivers.md) | The five drivers in detail, and writing a provider of your own |
 | [XPADEMU](docs/xpademu.md) | Every setting, how the injection works, and its limits |
 | [XPADVIEW](docs/xpadview.md) | The reference consumer, and how it tests rumble |
 | [Xpong](docs/xpong.md) | Edge detection, analogue with a digital fallback, and rumble that always stops |

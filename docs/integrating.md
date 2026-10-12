@@ -94,9 +94,10 @@ this order:
 4. Plain joystick plus keyboard.
 
 A shim that publishes an `XPAD` block populated from steps 2 to 4 lets a
-port implement only step 1 and get the rest for nothing. Three such
-drivers ship here, covering a plain joystick, the keyboard and the STE
-enhanced ports: see [Example drivers](drivers.md). Step 3's trick of
-borrowing joystick 1's fire bit as a second button is still to write:
-the joystick driver publishes each port as its own pad rather than
-merging them.
+port implement only step 1 and get the rest for nothing. Four such
+drivers ship here, covering a plain joystick, a joystick with a second
+button, the keyboard and the STE enhanced ports: see
+[Example drivers](drivers.md). The joymouse driver is step 3 with the
+ports the other way round, so the mouse can stay plugged in: joystick 1
+for movement and button 1, and port 0's fire line, the left mouse
+button, as button 2.

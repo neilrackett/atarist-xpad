@@ -19,6 +19,7 @@ limits are listed below rather than left for you to discover.
 | Name | Description | Device |
 | ---- | ----------- | ------ |
 | [STEpad](../src/drivers/stepad) | Both enhanced joystick ports as two pads, reading a real Jaguar style gamepad. | STE, Falcon |
+| [joymouse](../src/drivers/joymouse) | Joystick 1 as one pad, with the left mouse button as button 2. | ST, Mega ST, STE, Mega STE, TT, Falcon |
 | [joystick](../src/drivers/joystick) | Both joystick ports as two pads, each with a d-pad and one button. | ST, Mega ST, STE, Mega STE, TT, Falcon |
 | [keyboard](../src/drivers/keyboard) | The keyboard as one pad, using DOOM's default controls. | All, with TOS 2.0 or later: Mega STE, TT and Falcon ship with it, and an earlier ST or STE can be upgraded to it |
 | [DevOps](../src/drivers/devops) | Up to four pads driven from the workstation, for unattended tests and remote play. | Any, with a SidecarTridge Multi-device running md-devops with its rom4 area |
@@ -79,6 +80,37 @@ per pad. Four rows cover the whole pad. Everything is active low.
 - **`seq` advances every tick**, not on change, because a poll cannot
   know a button moved without looking. Unlike the joystick driver, a
   still pad here still commits.
+
+## joymouse, via joyvec and mousevec
+
+Publishes joystick 1 as one pad, with its fire as `XPAD_SOUTH` and the
+left mouse button as `XPAD_EAST`. Port 0's fire line is the left mouse
+button, so button 2 is either a mouse in port 0 or a two button
+joystick wired so its second button reaches pin 6 of port 0. It is the
+joystick driver plus one thing, a pad assembled from two vectors, and
+it links that driver's `joyvec.s` and `translate.h` as they are.
+
+The IKBD reports that wire in one of two ways, depending on the mode a
+program has put it in: as the left button of a relative mouse packet,
+or as joystick 0's fire in joystick mode. Both write the same variable
+and the last report wins, so a game that switches modes while the
+button is held cannot leave it stuck down.
+
+- **Two buttons.** The right mouse button shares a line with joystick
+  1's fire, so it could only repeat button 1, and is not read.
+- **No analogue**, as above. Moving the mouse does nothing.
+- **Absolute mouse mode is not read**, nor mouse buttons reported as
+  keys. A game that sets either loses button 2 until it switches back.
+- **No presence detection.** The pad always reports connected.
+- **`seq` advances on every joystick packet**, but on a mouse packet
+  only when button 2 changes, because a moving mouse reports
+  constantly.
+- **Not with XPADEMU.** It adds nothing, since the stick and the button
+  already reach a game directly, and its injected joystick packets come
+  back through this driver: button 2 becomes fire as well, and can stay
+  down after it is released.
+- **It can be cut out** by a program that takes `joyvec` or `mousevec`
+  without chaining, as with the joystick driver.
 
 ## joystick, via joyvec
 
@@ -198,20 +230,20 @@ names the SidecarTridge, as for md-devops' own CLI. The top of
 
 ## What none of the drivers does
 
-- **Rumble or LEDs.** All four pass NULL for `req`, so `xpad_req()` returns
+- **Rumble or LEDs.** All five pass NULL for `req`, so `xpad_req()` returns
   NULL and none claims `XPAD_CAP_RUMBLE` or `XPAD_CAP_LED`.
 - **Coexist with another provider.** Xpad is single provider, so all
-  four refuse to install when an `XPAD` cookie is already present rather than
+  five refuse to install when an `XPAD` cookie is already present rather than
   displace something better.
 
-The keyboard driver publishes one pad, the joystick and STE drivers two
-each, and the DevOps driver four, the most the ABI carries.
+The keyboard and joymouse drivers publish one pad each, the joystick
+and STE drivers two each, and the DevOps driver four, the most the ABI carries.
 
 ## Where they have been tested
 
-All four run self tests under Hatari, the STE driver on an emulated
-STE and Mega STE. The joystick and keyboard drivers are additionally
-exercised end to end: installed resident from `AUTO`, then read by a
+All five run self tests under Hatari, the STE driver on an emulated
+STE and Mega STE. The joystick, joymouse and keyboard drivers are
+additionally exercised end to end: installed resident from `AUTO`, then read by a
 separate program through the cookie jar.
 
 The DevOps driver's self test reads an image of the area that

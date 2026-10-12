@@ -63,6 +63,7 @@ if step "link everything that runs on an ST" stcmd make st; then
     # together rather than stopping at the first.
     step "ABI assertions on an emulated ST" make hatari
     step "joystick driver self test" make hatari-joystick
+    step "joystick and mouse driver self test" make hatari-joymouse
     step "keyboard driver self test" make hatari-keyboard
     step "STE joypad self test, on an STE" make hatari-stepad
     # And on a plain ST, where the point is that it reads nothing at all

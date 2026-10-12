@@ -36,6 +36,8 @@ examples/xpong/     an example game: Pong, one or two players, rumble
 src/xpad.c          consumer half: find a block and read it
 src/xpad_provider.c provider half: own a block and publish it
 src/drivers/joystick  example provider: both joystick ports as two pads
+src/drivers/joymouse  example provider: joystick 1, left mouse button as
+                      button 2; links the joystick driver's joyvec.s
 src/drivers/keyboard  example provider: DOOM controls as one pad
 src/drivers/stepad    example provider: the STE's enhanced ports
 src/drivers/devops    example provider: pads from the workstation,
@@ -48,6 +50,7 @@ src/tools/joypkt.h    xpad state to IKBD packets: TOS-free, host tested
 src/tools/emuetv.s    its ETV trampoline and IKBD vector glue
 test/abi.c          ABI assertions, mostly static; host and ST builds
 test/joystick.c     IKBD translation tests, host only
+test/joymouse.c     button 2 ownership tests, host only
 test/keyboard.c     keymap tests, host only
 test/stepad.c       STE matrix decode tests, host only
 test/devops.c       DevOps area location tests, host only
@@ -106,6 +109,7 @@ STCMD_NO_TTY=1 stcmd make check    compile for the ST, warnings fatal
 STCMD_NO_TTY=1 stcmd make st       link everything that runs on an ST
 make hatari                        ABI assertions on an emulated ST
 make hatari-joystick               joystick driver self test
+make hatari-joymouse               joystick and mouse driver self test
 make hatari-keyboard               keyboard driver self test
 make hatari-stepad                 STE joypad self test, on an emulated STE
 make hatari-devops                 DevOps driver against the tool's image
@@ -318,11 +322,18 @@ Listed so they do not get helpfully undone:
 - `xpad_req()` is the only supported route to the request area, which is
   the sole direction a consumer can corrupt a provider. Do not encourage
   reading `XPAD.req` directly.
-- The joystick and keyboard drivers need no periodic hook: `joyvec` and
-  `kbdvec` are both called for us when something changes. The STE driver
+- The joystick, joymouse and keyboard drivers need no periodic hook:
+  `joyvec`, `mousevec` and `kbdvec` are all called for us when something
+  changes. The STE driver
   does need one, because its ports are registers and nothing announces a
   change, so it takes ETV (`$400`) rather than VBL (`$70`): VBL is far
   more likely to be clobbered by an existing game.
+- The joymouse driver holds button 2 in **one** variable that both of
+  its vectors write, last report wins. It is one wire, port 0's fire
+  line, reported as the left button in mouse mode and as joystick 0's
+  fire in joystick mode. Two flags ORed together would stick down when a
+  game switches the IKBD to joystick mode with the button held, since no
+  mouse packet ever arrives to release it.
 - The STE driver checks `_MCH` before it reads anything, because
   `$FF9200` does not exist on a plain ST and a bus error inside a timer
   interrupt takes the machine with it. It compares the **whole** cookie,

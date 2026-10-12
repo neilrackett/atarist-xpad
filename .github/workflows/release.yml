@@ -150,6 +150,7 @@ jobs:
             || gh release create latest --title "Xpad" --notes "Rolling build of the example drivers and tools."
           gh release upload latest \
             dist/XPADJOY.PRG \
+            dist/XPADJM.PRG \
             dist/XPADKEY.PRG \
             dist/XPADSTE.PRG \
             dist/XPADVIEW.PRG \

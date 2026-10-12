@@ -18,6 +18,7 @@
 #   STCMD_NO_TTY=1 stcmd make st       link everything that runs on an ST
 #   make hatari                        ABI assertions on an emulated ST
 #   make hatari-joystick               joystick driver self test
+#   make hatari-joymouse               joystick and mouse driver self test
 #   make hatari-keyboard               keyboard driver self test
 #   make hatari-stepad                 STE joypad driver self test
 #   make hatari-devops                 DevOps driver against the tool's image
@@ -55,7 +56,7 @@ TOOLS       = $(SRC)/tools
 # one a newcomer or a pre-commit hook can actually run.
 .DEFAULT_GOAL := test
 
-.PHONY: all check test test-devops inc inc-check examples st hatari hatari-joystick hatari-keyboard hatari-stepad hatari-devops hatari-view hatari-emu hatari-xpong hatari-integration drivers tools games clean
+.PHONY: all check test test-devops inc inc-check examples st hatari hatari-joystick hatari-joymouse hatari-keyboard hatari-stepad hatari-devops hatari-view hatari-emu hatari-xpong hatari-integration drivers tools games clean
 
 all: check test
 
@@ -95,6 +96,9 @@ test: | $(BUILD)
 	@echo
 	$(HOSTCC) $(HOSTCFLAGS) test/joystick.c -o $(BUILD)/joy
 	@$(BUILD)/joy
+	@echo
+	$(HOSTCC) $(HOSTCFLAGS) test/joymouse.c -o $(BUILD)/joymouse
+	@$(BUILD)/joymouse
 	@echo
 	$(HOSTCC) $(HOSTCFLAGS) test/keyboard.c -o $(BUILD)/key
 	@$(BUILD)/key
@@ -158,6 +162,19 @@ $(DIST)/XPADJOY.PRG: $(JOYDEP) | $(DIST)
 # driver's -t flag is reachable by hand but not by the harness.
 $(BUILD)/JOYTEST.TOS: $(JOYDEP) | $(BUILD)
 	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(JOYSRC) -o $@
+
+# The joystick driver plus the left mouse button: its joyvec trampoline
+# and translation are reused as they are, and only mousevec is new.
+JMDIR  = $(DRIVERS)/joymouse
+JMSRC  = $(JMDIR)/joymouse.c $(JMDIR)/mousevec.s $(JOYDIR)/joyvec.s \
+         $(SRC)/xpad.c $(SRC)/xpad_provider.c
+JMDEP  = $(JMSRC) $(JMDIR)/combine.h $(JOYDIR)/translate.h $(SRC)/xpad.h
+
+$(DIST)/XPADJM.PRG: $(JMDEP) | $(DIST)
+	$(CC) $(CFLAGS) $(JMSRC) -o $@
+
+$(BUILD)/JMTEST.TOS: $(JMDEP) | $(BUILD)
+	$(CC) $(CFLAGS) -DXPAD_SELFTEST $(JMSRC) -o $@
 
 KEYDIR = $(DRIVERS)/keyboard
 KEYSRC = $(KEYDIR)/keyboard.c $(KEYDIR)/kbdvec.s $(SRC)/xpad.c \
@@ -246,11 +263,12 @@ $(BUILD)/PONGTEST.TOS: $(PONGDEP) | $(BUILD)
 games: $(DIST)/XPONG.TOS
 	@echo "built XPONG.TOS in $(DIST)"
 
-drivers: $(DIST)/XPADJOY.PRG $(DIST)/XPADKEY.PRG $(DIST)/XPADSTE.PRG \
-         $(DIST)/XPADDEV.PRG
-	@echo "built XPADJOY.PRG, XPADKEY.PRG, XPADSTE.PRG and XPADDEV.PRG in $(DIST)"
+drivers: $(DIST)/XPADJOY.PRG $(DIST)/XPADJM.PRG $(DIST)/XPADKEY.PRG \
+         $(DIST)/XPADSTE.PRG $(DIST)/XPADDEV.PRG
+	@echo "built XPADJOY.PRG, XPADJM.PRG, XPADKEY.PRG, XPADSTE.PRG and XPADDEV.PRG in $(DIST)"
 
 st: $(BUILD)/ABI.TOS $(DIST)/XPADJOY.PRG $(BUILD)/JOYTEST.TOS \
+    $(DIST)/XPADJM.PRG $(BUILD)/JMTEST.TOS \
     $(DIST)/XPADKEY.PRG $(BUILD)/KEYTEST.TOS \
     $(DIST)/XPADSTE.PRG $(BUILD)/STETEST.TOS \
     $(DIST)/XPADDEV.PRG $(BUILD)/DEVTEST.TOS \
@@ -258,7 +276,8 @@ st: $(BUILD)/ABI.TOS $(DIST)/XPADJOY.PRG $(BUILD)/JOYTEST.TOS \
     $(DIST)/XPADEMU.PRG $(DIST)/XPADEMU.CFG $(BUILD)/EMUTEST.TOS \
     $(DIST)/XPONG.TOS $(BUILD)/PONGTEST.TOS
 	@echo "built the programs into $(DIST) and the self tests into $(BUILD)"
-	@echo "run: make hatari / hatari-joystick / hatari-keyboard"
+	@echo "run: make hatari / hatari-joystick / hatari-joymouse"
+	@echo "     make hatari-keyboard"
 	@echo "     make hatari-stepad / hatari-devops / hatari-view"
 	@echo "     make hatari-xpong"
 
@@ -270,6 +289,11 @@ hatari:
 # trampoline with fabricated packets and installs nothing.
 hatari-joystick:
 	@python3 test/run-hatari.py $(BUILD)/JOYTEST.TOS
+
+# The joystick and mouse driver's self test, likewise, through both
+# trampolines.
+hatari-joymouse:
+	@python3 test/run-hatari.py $(BUILD)/JMTEST.TOS
 
 # The keyboard driver's self test, likewise.
 hatari-keyboard:
@@ -312,6 +336,8 @@ hatari-xpong:
 # only test where provider and consumer are different processes.
 hatari-integration:
 	@python3 test/run-hatari.py $(BUILD)/VIEWTEST.TOS $(DIST)/XPADJOY.PRG
+	@echo
+	@python3 test/run-hatari.py $(BUILD)/VIEWTEST.TOS $(DIST)/XPADJM.PRG
 	@echo
 	@python3 test/run-hatari.py $(BUILD)/VIEWTEST.TOS $(DIST)/XPADKEY.PRG
 
