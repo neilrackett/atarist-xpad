@@ -415,7 +415,7 @@ driver here and every external one.
 Its mechanism is ported from
 [MD/Sidepad](https://github.com/neilrackett/md-sidepad)'s
 `target/atarist/src/userfw.s`, which established it on real hardware.
-Three things in it are load-bearing and easy to undo by accident:
+Four things in it are load-bearing and easy to undo by accident:
 
 - **`joyslot` and `mouseslot` hold the ADDRESSES of the `KBDVECS`
   fields, not their contents.** A game installs its own `joyvec` after
@@ -431,6 +431,13 @@ Three things in it are load-bearing and easy to undo by accident:
   delivers it that way so a consumer can read a word from header+1 and
   get both joystick bytes aligned; PP's JOYMOUT tester does exactly
   that, and a 68000 address errors on a word read from an odd address.
+
+- **`etv_timer` runs at 50 Hz, so every tick injects.** TOS calls it on
+  every fourth of Timer C's 200 Hz interrupts, not on each one. XPADEMU
+  once divided by four again, which ran injection, autofire and the
+  pointer at a quarter of their rate. Measured under TOS 1.62, TOS 2.06
+  and EmuTOS. Do not put a divider back; time anything in real seconds
+  from `_hz_200`.
 
 The trampoline saves the whole register set rather than the ABI scratch
 set, because `mousevec` reaches line-A and the AES cursor machinery,

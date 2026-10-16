@@ -57,18 +57,17 @@
 #define CFG_FILE "XPADEMU.CFG"
 
 /*
- * etv_timer runs at about 200 Hz and the IKBD reports at 50, so inject
- * on every fourth tick and chain the rest. Matching the real rate
- * matters: a game that counts packets to time an autofire or a repeat
- * would run four times fast otherwise.
- */
-#define ETV_DIVISOR 4
-
-/*
+ * etv_timer runs at 50 Hz, the rate the IKBD reports at, so every tick
+ * injects. TOS calls it on every fourth of Timer C's 200 Hz interrupts,
+ * not on each one: this once divided by four again on the belief that
+ * it ran at 200 Hz, which made injection, autofire and the pointer run
+ * at a quarter of their rate. Measured under TOS 1.62, TOS 2.06 and
+ * EmuTOS: 50 Hz.
+ *
  * Autofire is configured in shots per second, because that is what a
- * person means, and stored as the tick period the state machine wants.
- * Injection runs at 50 Hz, so eight shots a second is a six tick
- * cycle: three held, three released.
+ * person means, and stored as the tick period the state machine wants,
+ * so eight shots a second is a six tick cycle: three held, three
+ * released.
  */
 #define INJECT_HZ 50
 #define AUTOFIRE_TICKS(hz) ((uint8_t)(INJECT_HZ / (hz)))
@@ -319,7 +318,6 @@ static const XPAD *pads;
 static void **joyslot;
 static void **mouseslot;
 
-static uint8_t divider = 1;
 static uint8_t prev_joy;
 static uint8_t prev_mbtn;
 static JOYPKT_MOUSE macc;
@@ -335,17 +333,12 @@ static JOYPKT_AUTO autostate;
 static uint8_t joy_packet[4];
 static uint8_t mouse_packet[3];
 
-/* Called from the trampoline, in interrupt context, 200 times a
+/* Called from the trampoline, in interrupt context, 50 times a
  * second. Allocates nothing and calls nothing that could block. */
 void xpademu_tick(void)
 {
     XPAD_PAD pad;
     uint8_t joy;
-
-    if (--divider)
-        return;
-
-    divider = ETV_DIVISOR;
 
     if (!pads)
         return;
@@ -636,10 +629,9 @@ static int selftest(void)
     allocate_fire();
 
     /*
-     * The divider starts at 1 so the very first tick injects, rather
-     * than making whatever the pad already holds wait a frame for the
-     * count to come round. After that it is four ETV ticks per packet,
-     * because the IKBD reports at 50 Hz and etv_timer runs at 200.
+     * Every tick injects what has changed, at once: etv_timer runs at
+     * the IKBD's 50 Hz, so there is nothing to divide down, and a pad
+     * that changes is heard on the very next tick.
      */
     set_pad(XPAD_RIGHT | XPAD_SOUTH, 0, 0);
     joy_calls = 0;
@@ -648,15 +640,15 @@ static int selftest(void)
 
     set_pad(XPAD_LEFT | XPAD_SOUTH, 0, 0);
     joy_calls = 0;
-    ticks(3);
-    check(joy_calls == 0, "then three ticks inject nothing");
     ticks(1);
-    check(joy_calls == 1, "and the fourth injects once");
+    check(joy_calls == 1, "and so does the next, when the pad changes");
+    ticks(3);
+    check(joy_calls == 1, "while unchanged ticks inject nothing");
     check(chain_calls == 5, "every tick reaches the displaced handler");
 
     /* Put the state back for the packet checks below. */
     set_pad(XPAD_RIGHT | XPAD_SOUTH, 0, 0);
-    ticks(4);
+    ticks(1);
 
     /* The packet a game sees. Directions pass through the bottom
      * nibble unchanged and fire moves to bit 7. */
@@ -676,7 +668,7 @@ static int selftest(void)
     check(joy_calls == 0, "an unchanged pad injects nothing");
 
     set_pad(XPAD_LEFT, 0, 0);
-    ticks(4);
+    ticks(1);
     check(joy_calls == 1, "a change injects again");
     check(seen_joy[2] == XPAD_LEFT, "with fire released");
 
@@ -684,11 +676,11 @@ static int selftest(void)
      * fire is the whole reason a pad has no dead ones, and a game only
      * ever asks about fire. */
     set_pad(XPAD_START, 0, 0);
-    ticks(4);
+    ticks(1);
     check(seen_joy[2] & JOYPKT_FIRE, "a button with no other job fires");
 
     set_pad(XPAD_MODE, 0, 0);
-    ticks(4);
+    ticks(1);
     check(seen_joy[2] & JOYPKT_FIRE, "and so does the one nobody uses");
 
     /*
@@ -712,7 +704,7 @@ static int selftest(void)
         {
             int before = joy_calls;
 
-            ticks(4);
+            ticks(1);
 
             if (joy_calls == before)
                 continue;
@@ -730,7 +722,7 @@ static int selftest(void)
 
     /* Releasing it stops, rather than leaving fire stuck either way. */
     set_pad(0, 0, 0);
-    ticks(4);
+    ticks(1);
     joy_calls = 0;
     ticks(40);
     check(joy_calls == 0, "and letting go stops the stream");
@@ -746,7 +738,7 @@ static int selftest(void)
     check(mouse_calls == 0, "a stick inside the deadzone moves nothing");
 
     set_pad(0, 127, 0);
-    ticks(4);
+    ticks(1);
     check(mouse_calls == 1, "a deflected stick moves the mouse");
     check((seen_mouse[0] & 0xFC) == JOYPKT_MOUSE_HDR,
           "with a relative mouse header");
@@ -755,13 +747,13 @@ static int selftest(void)
     /* Both xpad and the IKBD, as TOS sets it up, put +y down. */
     set_pad(0, 0, 127);
     mouse_calls = 0;
-    ticks(4);
+    ticks(1);
     check((int8_t)seen_mouse[2] > 0, "and down the screen for a down stick");
 
     /* Buttons reach the header even when the stick is still. */
     set_pad(XPAD_THUMBR, 0, 0);
     mouse_calls = 0;
-    ticks(4);
+    ticks(1);
     check(mouse_calls == 1, "a click alone still sends a packet");
     check(seen_mouse[0] & JOYPKT_MOUSE_LEFT, "carrying the left button");
 
@@ -769,7 +761,7 @@ static int selftest(void)
     demo_joyslot = 0;
     demo_mouseslot = 0;
     set_pad(XPAD_UP, 0, 0);
-    ticks(4);
+    ticks(1);
     check(1, "an empty vector slot is survivable");
 
     printf("\n%s\n", failures ? "FAILED" : "all checks passed");

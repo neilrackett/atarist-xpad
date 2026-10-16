@@ -22,9 +22,9 @@
         .extern _xpademu_etv_chain      | void (*)(void), set by the C side
         .extern _xpademu_tick           | void (*)(void)
 
-| etv_timer ($400) entry. TOS' MFP Timer C calls this about 200 times a
-| second; the C side divides it down to the 50 Hz the IKBD is expected
-| to report at.
+| etv_timer ($400) entry. TOS calls this 50 times a second, from every
+| fourth of Timer C's 200 Hz interrupts, which is the rate the IKBD is
+| expected to report at, so the C side injects on every call.
 |
 | The whole register set is saved rather than the ABI scratch set,
 | because this ends up inside joyvec and mousevec. Those reach line-A
