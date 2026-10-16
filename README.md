@@ -33,7 +33,7 @@ the ST. Only one can be installed at a time.
 | Name | What it connects | You'll need |
 | ---- | ---------------- | ----------- |
 | [COMpad](https://github.com/neilrackett/pico-compad) | Up to four Bluetooth gamepads, with analogue sticks and rumble, through the serial port | A Raspberry Pi Pico W and a MAX3232 module |
-| [MD/Sidepad](https://github.com/neilrackett/md-sidepad) | A Bluetooth gamepad, analogue sticks and all, through the cartridge port | A SidecarTridge Multi-device |
+| [MD/Sidepad](https://github.com/neilrackett/md-sidepad) | Up to four Bluetooth gamepads, with analogue sticks and rumble, through the cartridge port | A SidecarTridge Multi-device |
 
 There are also five example drivers here. They're written to be read
 and copied by anyone making a provider of their own, but they work too:
@@ -149,7 +149,7 @@ as `XPAD_NORTH` and `XPAD_WEST`, in new code.
   includes many original floppy games, won't see your pad. Software
   written for Xpad is unaffected.
 - None of the example drivers offers rumble. For that you need a
-  provider such as COMpad.
+  provider such as COMpad or MD/Sidepad.
 - The example drivers pass their tests under Hatari, but haven't been
   run on real hardware yet.
 
