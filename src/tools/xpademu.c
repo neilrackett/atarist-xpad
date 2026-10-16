@@ -124,6 +124,10 @@ typedef struct
  *
  * A deadzone of 40 is what the COMpad provider folds the d-pad at, so
  * the mouse goes to sleep at the same deflection the directions do.
+ *
+ * A speed of 6 is the pointer that was tested on hardware: that was 24
+ * when this wrongly injected at 12.5 Hz, and 6 at 50 Hz moves it just
+ * as far each second, about 150 pixels at full deflection.
  */
 static CFG cfg = {
     0,
@@ -136,7 +140,7 @@ static CFG cfg = {
     XPAD_THUMBR,
     0,
     40,
-    24,
+    6,
 };
 
 /* Whether the config file named fire itself, in which case it is taken
@@ -623,7 +627,7 @@ static int selftest(void)
     xpademu_etv_chain = fake_chain;
 
     cfg.mouse = 1;
-    cfg.speed = 24;
+    cfg.speed = 6;
     cfg.deadzone = 40;
     cfg.autofire = 0;
     allocate_fire();

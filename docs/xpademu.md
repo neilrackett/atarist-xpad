@@ -33,7 +33,7 @@ on port 1 keeps working and whichever one you move drives the game.
 | `left` | `thumbr` | buttons for left click |
 | `right` | *none* | and for right click |
 | `deadzone` | `40` | below this the stick is at rest |
-| `speed` | `24` | pointer movement per unit of deflection |
+| `speed` | `6` | pointer movement per unit of deflection |
 
 **Fire is whatever is left over.** Only autofire, jump and the mouse
 buttons have a named job by default, and every other button becomes
