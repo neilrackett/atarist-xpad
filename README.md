@@ -73,9 +73,9 @@ all.
 For everything else, `XPADEMU.PRG` turns your first pad into a joystick
 in port 1 and its right stick into the mouse, with your real joystick
 and mouse still working alongside. Every button without another job
-fires, west autofires, and clicking the right stick is the left mouse
-button. All of that can be changed in `XPADEMU.CFG`, and
-[docs/xpademu.md](docs/xpademu.md) has every setting.
+fires, west autofires eight times a second, and clicking the right
+stick is the left mouse button. All of that can be changed in
+`XPADEMU.CFG`, and [docs/xpademu.md](docs/xpademu.md) has every setting.
 
 ### Checking your pads
 
